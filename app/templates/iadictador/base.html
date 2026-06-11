@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_name }}</title>
+  <style>
+    :root {
+      --bg: #0f1720;
+      --panel: #162231;
+      --panel-soft: #1f2f43;
+      --text: #edf3f8;
+      --muted: #9fb1c1;
+      --border: rgba(255,255,255,.12);
+      --primary: #2bb3c0;
+      --secondary: #5576d1;
+      --accent: #7dd3fc;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --success: #22c55e;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(43,179,192,.18), transparent 32rem),
+        radial-gradient(circle at 80% 10%, rgba(85,118,209,.18), transparent 28rem),
+        var(--bg);
+      color: var(--text);
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+
+    .layout {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+    }
+
+    .sidebar {
+      background: rgba(12,20,30,.88);
+      border-right: 1px solid var(--border);
+      padding: 1rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+    }
+
+    .brand {
+      padding: 1rem;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(43,179,192,.35), rgba(85,118,209,.28));
+      border: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.2rem;
+      letter-spacing: .03em;
+    }
+
+    .brand small { color: var(--muted); }
+
+    .nav a, .nav .box {
+      display: block;
+      padding: .75rem .85rem;
+      border-radius: 12px;
+      margin-bottom: .4rem;
+      background: rgba(255,255,255,.035);
+      border: 1px solid transparent;
+      color: var(--text);
+    }
+
+    .nav a:hover {
+      border-color: var(--border);
+      background: rgba(255,255,255,.07);
+    }
+
+    .content {
+      padding: 1.25rem;
+    }
+
+    .banner {
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 1rem 1.2rem;
+      margin-bottom: 1rem;
+      background: linear-gradient(90deg, rgba(43,179,192,.28), rgba(85,118,209,.24), rgba(125,211,252,.13));
+    }
+
+    .banner h2 {
+      margin: 0;
+      font-size: 1.35rem;
+    }
+
+    .panel {
+      background: rgba(22,34,49,.88);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 14px 40px rgba(0,0,0,.18);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: .9rem;
+      color: var(--muted);
+      margin-bottom: .3rem;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: .72rem .8rem;
+      color: var(--text);
+      background: rgba(0,0,0,.22);
+      outline: none;
+    }
+
+    textarea {
+      min-height: 180px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    button, .button {
+      border: 0;
+      border-radius: 12px;
+      padding: .75rem 1rem;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: white;
+      cursor: pointer;
+      font-weight: 650;
+      display: inline-block;
+    }
+
+    button.secondary {
+      background: rgba(255,255,255,.08);
+      border: 1px solid var(--border);
+    }
+
+    button.danger {
+      background: var(--danger);
+    }
+
+    .muted { color: var(--muted); }
+    .error { color: #fecaca; background: rgba(239,68,68,.18); border: 1px solid rgba(239,68,68,.3); padding: .75rem; border-radius: 12px; margin-bottom: 1rem; }
+    .ok { color: #bbf7d0; background: rgba(34,197,94,.15); border: 1px solid rgba(34,197,94,.3); padding: .75rem; border-radius: 12px; margin-bottom: 1rem; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: .7rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { color: var(--muted); font-weight: 600; }
+
+    .top-actions {
+      display: flex;
+      gap: .6rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .audio-box {
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      padding: .8rem;
+      background: rgba(255,255,255,.035);
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: relative;
+        height: auto;
+      }
+
+      .grid-2, .grid-3 {
+        grid-template-columns: 1fr;
+      }
+
+      .content {
+        padding: .8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>{{ app_name }}</h1>
+        <small>radiología asistida</small>
+      </div>
+
+      {% if current_user %}
+      <nav class="nav">
+        <a href="/iad/trabajo">Área de trabajo</a>
+        <a href="/iad/historial">Historial</a>
+        {% if current_user.role == "admin" %}
+          <a href="/iad/admin/usuarios">Usuarios</a>
+        {% endif %}
+        <div class="box">
+          <strong>{{ current_user.username }}</strong><br>
+          <span class="muted">Rol: {{ current_user.role }}</span><br>
+          <span class="muted">Requests sesión: {{ request_count }}</span><br>
+          {% if current_user.last_login_at %}
+            <span class="muted">Último login: {{ current_user.last_login_at.strftime("%Y-%m-%d %H:%M:%S") }}</span>
+          {% endif %}
+        </div>
+        <a href="/iad/logout">Cerrar sesión</a>
+      </nav>
+      {% endif %}
+    </aside>
+
+    <main class="content">
+      <div class="banner">
+        <h2>{% block title %}{{ app_name }}{% endblock %}</h2>
+      </div>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

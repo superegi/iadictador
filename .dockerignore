@@ -1,0 +1,11 @@
+.venv
+venv
+__pycache__
+*.pyc
+.git
+.gitignore
+backups_iadictador
+iadictador.sqlite3
+uploads_iadictador
+.pytest_cache
+*.log

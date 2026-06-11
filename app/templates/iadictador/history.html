@@ -1,0 +1,49 @@
+{% extends "iadictador/base.html" %}
+{% block title %}Historial{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <h3>Historial</h3>
+  <p class="muted">
+    Las OT históricas son trazabilidad. Si necesita modificar una, luego agregaremos botón para duplicar y crear una nueva OT.
+  </p>
+</div>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th># OT</th>
+        {% if admin_view %}<th>Usuario</th>{% endif %}
+        <th>Timestamp</th>
+        <th>Tipo</th>
+        <th>Modalidad</th>
+        <th>Título</th>
+        <th>Paciente</th>
+        <th>Edad</th>
+        <th>Estado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ot in ots %}
+      <tr>
+        <td>{{ ot.ot_user_number }}</td>
+        {% if admin_view %}<td>{{ ot.user.username if ot.user else "" }}</td>{% endif %}
+        <td>{{ ot.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+        <td>{{ ot.report_type or "" }}</td>
+        <td>{{ ot.modality or "" }}</td>
+        <td>{{ ot.report_title or "" }}</td>
+        <td>{{ (ot.patient_last_name or "") }} {{ (ot.patient_first_name or "") }}</td>
+        <td>{{ ot.patient_age or "" }}</td>
+        <td>{{ ot.status }}</td>
+        <td><a href="/iad/ot/{{ ot.id }}">Abrir</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10">Sin OT guardadas.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "iadictador/base.html" %}
+{% block title %}Ingreso{% endblock %}
+{% block content %}
+<div class="panel" style="max-width: 520px;">
+  <h3>Ingreso</h3>
+  <p class="muted">El ingreso tiene una pausa breve de seguridad.</p>
+
+  {% if error %}
+    <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/iad/login">
+    <div>
+      <label>Usuario</label>
+      <input name="username" autocomplete="username" required>
+    </div>
+    <br>
+    <div>
+      <label>Clave</label>
+      <input name="password" type="password" autocomplete="current-password" required>
+    </div>
+    <br>
+    <button type="submit">Ingresar</button>
+  </form>
+</div>
+{% endblock %}

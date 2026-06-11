@@ -1,0 +1,19 @@
+{
+  "name": "general_rules",
+  "description": "Reglas generales iniciales de IA Dictador.",
+  "rules": [
+    {
+      "id": "remove_test_phrases",
+      "severity": "warning",
+      "description": "Evitar que frases de prueba aparezcan en producción.",
+      "phrases": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "active": true
+    }
+  ]
+}

@@ -1,13 +1,31 @@
 FROM python:3.12-slim
 
-WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/code:/code/app
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+WORKDIR /code
 
-COPY app /app/app
-COPY report_templates /app/report_templates
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /code/requirements.txt
+
+RUN python -m pip install --upgrade pip setuptools wheel \
+    && python -m pip install --no-cache-dir -r /code/requirements.txt \
+    && python -m pip install --no-cache-dir itsdangerous==2.2.0 \
+    && python - <<'PY'
+import itsdangerous
+print("BUILD CHECK: itsdangerous OK")
+PY
+
+COPY . /code
+
+RUN mkdir -p /data/uploads_iadictador
 
 EXPOSE 8015
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8015", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8015"]

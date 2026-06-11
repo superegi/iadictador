@@ -1,0 +1,281 @@
+{% extends "iadictador/base.html" %}
+{% block title %}
+  {% if ot %}OT #{{ ot.ot_user_number }}{% else %}Nueva OT{% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if not ot %}
+<form method="post" action="/iad/ot/crear" enctype="multipart/form-data">
+  <input type="hidden" name="timezone" id="timezone">
+  <input type="hidden" name="utc_offset_minutes" id="utc_offset_minutes">
+
+  <div class="panel">
+    <h3>Ingreso</h3>
+    <p class="muted">
+      Si quiere solo procesar texto, ingrese información y haga click en “Procesar”.
+      Si quiere agregar información adicional, complete la segunda sección y use “Procesar con datos extra”.
+    </p>
+
+    <div class="grid-2">
+      <div class="audio-box">
+        <h4>Audio principal</h4>
+        <p class="muted">PC: click para grabar. Celular: tap para grabar. También puede subir archivo de audio.</p>
+        <input id="audio_file" name="audio_file" type="file" accept="audio/*">
+        <br><br>
+        <div class="top-actions">
+          <button type="button" class="secondary" id="audio_start">Grabar</button>
+          <button type="button" class="secondary" id="audio_stop" disabled>Finalizar audio</button>
+        </div>
+        <p class="muted" id="audio_status"></p>
+      </div>
+
+      <div class="audio-box">
+        <h4>Audio de aclaración</h4>
+        <p class="muted">Opcional. Se guarda como segundo audio asociado a la OT.</p>
+        <input id="clarification_audio_file" name="clarification_audio_file" type="file" accept="audio/*">
+        <br><br>
+        <div class="top-actions">
+          <button type="button" class="secondary" id="clar_start">Grabar aclaración</button>
+          <button type="button" class="secondary" id="clar_stop" disabled>Finalizar aclaración</button>
+        </div>
+        <p class="muted" id="clar_status"></p>
+      </div>
+    </div>
+
+    <br>
+
+    <label>1) Información principal para el informe</label>
+    <textarea name="input_text_final" placeholder="Ingrese o pegue aquí la información principal. La transcripción de audio quedará aquí cuando se conecte el motor de transcripción."></textarea>
+
+    <br><br>
+
+    <label>Aclaración textual opcional</label>
+    <textarea name="clarification_text" placeholder="Ingrese aquí una aclaración adicional si corresponde."></textarea>
+
+    <br><br>
+    <button type="submit">Procesar</button>
+  </div>
+
+  <div class="panel">
+    <h3>2) Información extra</h3>
+    <p class="muted">Opcional. Si se completa, se guarda junto a la OT y se usará para procesar con contexto.</p>
+
+    <div class="grid-3">
+      <div>
+        <label>Lugar de trabajo</label>
+        <select name="workplace_id">
+          <option value="">Sin especificar</option>
+          {% for w in workplaces %}
+          <option value="{{ w.id }}">{{ w.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Plantilla</label>
+        <select name="template_id">
+          <option value="">Sin plantilla</option>
+          {% for t in templates %}
+          <option value="{{ t.id }}">{{ t.radiology_use }} · {{ t.template_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Modalidad</label>
+        <select name="modality">
+          <option value="">Sin especificar</option>
+          <option value="TC">TC</option>
+          <option value="MR">MR</option>
+          <option value="US">US</option>
+          <option value="RX">RX</option>
+          <option value="XA">XA</option>
+        </select>
+      </div>
+    </div>
+
+    <br>
+
+    <div class="grid-3">
+      <div>
+        <label>Nombre paciente</label>
+        <input name="patient_first_name">
+      </div>
+      <div>
+        <label>Apellido paciente</label>
+        <input name="patient_last_name">
+      </div>
+      <div>
+        <label>Sexo</label>
+        <select name="patient_sex">
+          <option value="">Sin especificar</option>
+          <option value="F">F</option>
+          <option value="M">M</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+    </div>
+
+    <br>
+
+    <div class="grid-3">
+      <div>
+        <label>Fecha nacimiento</label>
+        <input name="patient_birthdate" placeholder="AAAA-MM-DD">
+      </div>
+      <div>
+        <label>Edad</label>
+        <input name="patient_age">
+      </div>
+      <div>
+        <label>Tipo de informe</label>
+        <select name="report_type">
+          <option value="">Sin especificar</option>
+          <option value="ambulatorio">Ambulatorio</option>
+          <option value="urgencia">Urgencia</option>
+          <option value="oncologico">Oncológico</option>
+          <option value="hospitalizado">Hospitalizado</option>
+        </select>
+      </div>
+    </div>
+
+    <br>
+
+    <div class="grid-2">
+      <div>
+        <label>Hospital, clínica o servicio</label>
+        <input name="hospital_service">
+      </div>
+      <div>
+        <label>Título informe</label>
+        <input name="report_title">
+      </div>
+    </div>
+
+    <br>
+    <button type="submit">Procesar con datos extra</button>
+  </div>
+</form>
+{% else %}
+
+<div class="panel">
+  <h3>OT #{{ ot.ot_user_number }}</h3>
+  <p class="muted">
+    Estado: {{ ot.status }} · Creada: {{ ot.created_at.strftime("%Y-%m-%d %H:%M:%S") }}
+    {% if ot.validated_at %} · Validada: {{ ot.validated_at.strftime("%Y-%m-%d %H:%M:%S") }}{% endif %}
+  </p>
+</div>
+
+<div class="panel">
+  <h3>Revisión</h3>
+  <textarea readonly>{{ ot.review_report or "" }}</textarea>
+</div>
+
+<div class="panel">
+  <h3>Resultado</h3>
+  <form id="save-copy-form" method="post" action="/iad/ot/{{ ot.id }}/guardar-copiar">
+    <label>Informe limpio final editable</label>
+    <textarea id="final_report_accepted" name="final_report_accepted">{{ ot.final_report_accepted or ot.final_report_initial or "" }}</textarea>
+    <br><br>
+    <button type="submit">Guardar y copiar informe final</button>
+    <a class="button secondary" href="/iad/historial">Volver al historial</a>
+  </form>
+  <p class="muted" id="copy_status"></p>
+</div>
+
+<script>
+  const form = document.getElementById("save-copy-form");
+  const copyStatus = document.getElementById("copy_status");
+
+  form.addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const res = await fetch(form.action, { method: "POST", body: fd });
+    const text = await res.text();
+
+    if (!res.ok) {
+      copyStatus.textContent = "No se pudo guardar la OT.";
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      copyStatus.textContent = "OT guardada, validada y copiada al portapapeles.";
+    } catch (err) {
+      copyStatus.textContent = "OT guardada y validada. No se pudo copiar automáticamente; copie manualmente.";
+    }
+  });
+
+  window.addEventListener("beforeunload", function(e) {
+    const otStatus = "{{ ot.status }}";
+    if (otStatus !== "validated") {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
+</script>
+
+{% endif %}
+
+<script>
+  try {
+    document.getElementById("timezone").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    document.getElementById("utc_offset_minutes").value = String(-new Date().getTimezoneOffset());
+  } catch (e) {}
+
+  function setupRecorder(prefix, inputId) {
+    const startBtn = document.getElementById(prefix + "_start");
+    const stopBtn = document.getElementById(prefix + "_stop");
+    const status = document.getElementById(prefix + "_status");
+    const input = document.getElementById(inputId);
+
+    if (!startBtn || !stopBtn || !status || !input) return;
+
+    let mediaRecorder = null;
+    let chunks = [];
+
+    startBtn.addEventListener("click", async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        status.textContent = "Grabación no disponible en este navegador. Use subida de archivo.";
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        chunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(chunks, { type: "audio/webm" });
+          const file = new File([blob], prefix + "_grabacion.webm", { type: "audio/webm" });
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          input.files = dt.files;
+          stream.getTracks().forEach(t => t.stop());
+          status.textContent = "Audio listo para subir.";
+        };
+
+        mediaRecorder.start();
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        status.textContent = "Grabando...";
+      } catch (err) {
+        status.textContent = "No se pudo iniciar la grabación.";
+      }
+    });
+
+    stopBtn.addEventListener("click", () => {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    });
+  }
+
+  setupRecorder("audio", "audio_file");
+  setupRecorder("clar", "clarification_audio_file");
+</script>
+
+{% endblock %}

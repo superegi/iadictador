@@ -4,6 +4,3 @@ jinja2==3.1.5
 python-multipart==0.0.20
 pyyaml==6.0.2
 pydantic==2.10.5
-requests==2.32.3
-sqlalchemy
-itsdangerous==2.2.0

@@ -1,0 +1,92 @@
+{% extends "iadictador/base.html" %}
+{% block title %}Usuarios{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <h3>Crear usuario</h3>
+  {% if error %}
+    <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/iad/admin/usuarios/crear">
+    <div class="grid-3">
+      <div>
+        <label>Usuario</label>
+        <input name="username" required>
+      </div>
+      <div>
+        <label>Email</label>
+        <input name="email" type="email">
+      </div>
+      <div>
+        <label>Rol</label>
+        <select name="role">
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+    </div>
+    <br>
+    <div class="grid-2">
+      <div>
+        <label>Clave temporal</label>
+        <input name="password" required>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="submit">Crear usuario</button>
+      </div>
+    </div>
+    <p class="muted">La clave debe tener más de 4 caracteres, al menos una letra y al menos un número. El usuario deberá cambiarla en el primer ingreso.</p>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>Usuarios</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th>Rol</th>
+        <th>Activo</th>
+        <th>Cobro visible</th>
+        <th>Cobro habilitado</th>
+        <th>Valor</th>
+        <th>Reset clave</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>{{ u.role }}</td>
+        <td>{{ "sí" if u.is_active else "no" }}</td>
+        <td>{{ "sí" if u.billing_visible else "no" }}</td>
+        <td>{{ "sí" if u.billing_enabled else "no" }}</td>
+        <td>{{ u.price_per_transcription or "" }}</td>
+        <td>
+          <form method="post" action="/iad/admin/usuarios/{{ u.id }}/reset">
+            <input name="password" placeholder="nueva clave">
+            <button type="submit" class="secondary">Reset</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="/iad/admin/usuarios/{{ u.id }}/toggle" style="margin-bottom:.4rem;">
+            <button type="submit" class="secondary">{{ "Deshabilitar" if u.is_active else "Habilitar" }}</button>
+          </form>
+
+          <form method="post" action="/iad/admin/usuarios/{{ u.id }}/billing">
+            <label><input type="checkbox" name="billing_visible" {% if u.billing_visible %}checked{% endif %}> Ver cobro</label>
+            <label><input type="checkbox" name="billing_enabled" {% if u.billing_enabled %}checked{% endif %}> Cobrar</label>
+            <input name="price_per_transcription" value="{{ u.price_per_transcription or "" }}" placeholder="valor">
+            <button type="submit" class="secondary">Guardar cobro</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -14,7 +14,7 @@
     <div class="stats">
       <span class="pill agregado">Agregados: {{ result.stats.agregado }}</span>
       <span class="pill reemplazado">Reemplazos: {{ result.stats.reemplazado }}</span>
-      <span class="pill ia">IA: {{ result.stats.ia }}</span>
+      <span class="pill ia">IA/reglas: {{ result.stats.ia }}</span>
       <span class="pill revisar">Revisar: {{ result.stats.revisar }}</span>
       <span class="pill conflicto">Conflictos: {{ result.stats.conflicto }}</span>
     </div>
@@ -24,30 +24,20 @@
     <section class="panel input-panel">
       <h2>Dictado bruto escrito</h2>
       <form method="post" action="/process">
-        <textarea name="dictado_bruto" spellcheck="false" placeholder="Ejemplo: ">{{ dictado_bruto }}</textarea>
+        <textarea name="dictado_bruto" spellcheck="false" placeholder="Ejemplo: no hay vesícula, , ">{{ dictado_bruto }}</textarea>
         <div class="buttons">
           <button type="submit">Procesar</button>
           <a class="button-secondary" href="/">Limpiar</a>
         </div>
       </form>
 
-      <div class="legend-block">
-        <h3>Código de colores</h3>
-        <div class="legend-row"><span class="sample normal-sample">Texto normal</span><span>Conservado o aceptado.</span></div>
-        <div class="legend-row"><span class="sample blue-sample">Azul</span><span>Texto reemplazado/modificado.</span></div>
-        <div class="legend-row"><span class="sample green-sample">Verde</span><span>Texto agregado desde dictado.</span></div>
-        <div class="legend-row"><span class="sample gray-sample">[gris]</span><span>Campo variable o placeholder.</span></div>
-        <div class="legend-row"><span class="sample yellow-sample">Revisar</span><span>Requiere decisión del radiólogo.</span></div>
-        <div class="legend-row"><span class="sample red-sample">Conflicto</span><span>No debería firmarse sin resolver.</span></div>
-      </div>
-
       <div class="examples">
         <h3></h3>
         <ul>
+          <li><code>no hay vesícula</code></li>
           <li><code></code></li>
           <li><code></code></li>
-          <li><code></code></li>
-          <li><code></code></li>
+          <li><code>riñón derecho con litiasis de cuatro mm no perdón izquierdo sin dilatación</code></li>
         </ul>
       </div>
 
@@ -62,10 +52,10 @@
     <section class="panel report-panel">
       <div class="report-header">
         <h2>Informe en modo revisión</h2>
-        <div class="legend compact">
+        <div class="legend">
           <span class="legend-item agregado">Agregado</span>
           <span class="legend-item reemplazado">Reemplazado</span>
-          <span class="legend-item ia">IA</span>
+          <span class="legend-item ia">Estructurado</span>
           <span class="legend-item revisar">Revisar</span>
           <span class="legend-item conflicto">Conflicto</span>
           <span class="legend-item eliminado">Eliminado</span>
@@ -93,7 +83,7 @@
             {% if line.text %}
               <div class="report-line {{ line.status_class }}">
                 <div class="line-main">
-                  <span class="line-text">{{ line.diff_html | safe }}</span>
+                  <span class="line-text">{{ line.text }}</span>
 
                   {% for tag in line.tags %}
                     <span class="badge {{ tag|lower }}">{{ tag }}</span>
@@ -106,7 +96,7 @@
 
                 {% if line.original_text %}
                   <div class="original-text">
-                    <span>Original:</span> {{ line.original_text }}
+                    Original: {{ line.original_text }}
                   </div>
                 {% endif %}
 
@@ -133,46 +123,18 @@
       </article>
     </section>
 
-    <section class="panel final-panel">
-      <h2>Informe limpio final editable</h2>
-      <p class="small">Puedes editar aquí. El botón copia texto plano, sin etiquetas HTML.</p>
-      <div class="buttons">
-        <button type="button" onclick="copyFinalEditor()">Copiar informe final</button>
-        <button type="button" class="button-secondary" onclick="selectFinalEditor()">Seleccionar todo</button>
-      </div>
-
-      <article id="finalEditor" class="final-editor" contenteditable="true" spellcheck="true">
-        <h1>{{ result.template_name }}</h1>
-
-        {% for section in result.sections %}
-          <h3>{{ section.title }}</h3>
-
-          {% for line in section.lines %}
-            {% if line.text and not line.removed %}
-              <p class="final-line {{ line.status_class }}">{{ line.diff_html | safe }}</p>
-            {% endif %}
-          {% endfor %}
-        {% endfor %}
-      </article>
-
-      <textarea id="plainCopyBuffer" class="hidden-buffer">{{ result.clean_text }}</textarea>
+    <section class="panel clean-panel">
+      <h2>Informe limpio final</h2>
+      <p class="small">Esta versión elimina marcas visuales y frases eliminadas.</p>
+      <button onclick="copyClean()">Copiar informe limpio</button>
+      <pre id="cleanText">{{ result.clean_text }}</pre>
     </section>
   </main>
 
   <script>
-    function copyFinalEditor() {
-      const editor = document.getElementById("finalEditor");
-      const text = editor.innerText.replace(/\n{3,}/g, "\n\n").trim() + "\n";
+    function copyClean() {
+      const text = document.getElementById("cleanText").innerText;
       navigator.clipboard.writeText(text);
-    }
-
-    function selectFinalEditor() {
-      const editor = document.getElementById("finalEditor");
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
     }
   </script>
 </body>

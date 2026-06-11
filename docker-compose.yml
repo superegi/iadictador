@@ -1,13 +1,25 @@
 services:
-  reporte_ia:
-    build: .
-    container_name: reporte_ia_prototype
+  iadictador:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iadictador_app
+    restart: unless-stopped
     ports:
       - "8015:8015"
+    environment:
+      TZ: America/Santiago
+      IADICTADOR_SESSION_SECRET: cambia_este_secreto_largo
+      IADICTADOR_ADMIN_USER: admin
+      IADICTADOR_ADMIN_PASSWORD: admin1
+      IADICTADOR_DB_URL: sqlite:////data/iadictador.sqlite3
+      IADICTADOR_UPLOAD_DIR: /data/uploads_iadictador
     volumes:
-      - ./app:/app/app
-      - ./report_templates:/app/report_templates
-      - ./data:/app/data
-    env_file:
-      - .env
-    restart: unless-stopped
+      - iadictador_data:/data
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8015
+
+volumes:
+  iadictador_data:

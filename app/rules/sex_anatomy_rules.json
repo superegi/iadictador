@@ -1,0 +1,33 @@
+{
+  "name": "sex_anatomy_rules",
+  "description": "Reglas sexo/anatomía para advertencias futuras.",
+  "rules": [
+    {
+      "id": "female_with_prostate",
+      "severity": "critical",
+      "patient_sex": "F",
+      "forbidden_terms": [
+        "próstata",
+        "prostata",
+        "vesículas seminales",
+        "vesiculas seminales"
+      ],
+      "message": "Paciente femenino con término anatómico masculino.",
+      "active": true
+    },
+    {
+      "id": "male_with_uterus_ovaries",
+      "severity": "critical",
+      "patient_sex": "M",
+      "forbidden_terms": [
+        "útero",
+        "utero",
+        "ovario",
+        "ovarios",
+        "endometrio"
+      ],
+      "message": "Paciente masculino con término anatómico femenino.",
+      "active": true
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Reporte IA Prototype
+# IA Dictador
 
 Prototipo aislado para informes médicos asistidos por IA.
 

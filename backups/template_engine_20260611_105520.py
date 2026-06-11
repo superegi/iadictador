@@ -1,9 +1,6 @@
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-import difflib
-import html
-import re
 
 import yaml
 
@@ -21,57 +18,6 @@ def load_template(template_id: str = "tc_tap_cc") -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def _highlight_placeholders_escaped(escaped_text: str) -> str:
-    """
-    Marca campos tipo [ ] o [texto] como placeholders grises.
-    Recibe texto ya escapado para HTML.
-    """
-    return re.sub(
-        r"(\[[^\]]*\])",
-        r'<span class="diff-placeholder">\1</span>',
-        escaped_text,
-    )
-
-
-def _escape_with_placeholders(text: str) -> str:
-    return _highlight_placeholders_escaped(html.escape(text or ""))
-
-
-def _tokenize_with_spaces(text: str) -> list[str]:
-    return re.findall(r"\S+|\s+", text or "", flags=re.UNICODE)
-
-
-def _word_diff_html(original: str, new: str, mode: str = "modified") -> str:
-    """
-    Devuelve HTML mostrando el texto final.
-    - Partes iguales quedan normales.
-    - Partes nuevas/modificadas quedan azules o verdes.
-    - Lo eliminado no se muestra en la frase final; queda en detalle 'Original'.
-    """
-    original_tokens = _tokenize_with_spaces(original or "")
-    new_tokens = _tokenize_with_spaces(new or "")
-
-    if not original:
-        return f'<span class="diff-added-text">{_escape_with_placeholders(new)}</span>'
-
-    sm = difflib.SequenceMatcher(a=original_tokens, b=new_tokens)
-    chunks: list[str] = []
-
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        new_chunk = "".join(new_tokens[j1:j2])
-
-        if tag == "equal":
-            chunks.append(_escape_with_placeholders(new_chunk))
-        elif tag in ("replace", "insert"):
-            css = "diff-added-text" if mode == "added" else "diff-modified-text"
-            chunks.append(f'<span class="{css}">{_escape_with_placeholders(new_chunk)}</span>')
-        elif tag == "delete":
-            # Lo eliminado no va en el texto final; se muestra aparte como original.
-            continue
-
-    return "".join(chunks)
-
-
 def _line_status_class(tags: list[str], requires_review: bool) -> str:
     if "CONFLICTO" in tags:
         return "conflicto"
@@ -79,30 +25,13 @@ def _line_status_class(tags: list[str], requires_review: bool) -> str:
         return "revisar"
     if "ELIMINADO" in tags:
         return "eliminado"
-    if "AGREGADO" in tags:
-        return "agregado"
     if "REEMPLAZADO" in tags:
         return "reemplazado"
+    if "AGREGADO" in tags:
+        return "agregado"
     if "IA" in tags:
         return "ia"
     return "normal"
-
-
-def _prepare_line_visuals(line: dict[str, Any]) -> None:
-    tags = line.get("tags", [])
-    text = line.get("text", "")
-    original = line.get("original_text", "")
-
-    if line.get("removed"):
-        line["diff_html"] = _escape_with_placeholders(text)
-        return
-
-    if "AGREGADO" in tags:
-        line["diff_html"] = _word_diff_html("", text, mode="added")
-    elif "REEMPLAZADO" in tags and original:
-        line["diff_html"] = _word_diff_html(original, text, mode="modified")
-    else:
-        line["diff_html"] = _escape_with_placeholders(text)
 
 
 def build_report(template: dict[str, Any], interpretation: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -118,7 +47,6 @@ def build_report(template: dict[str, Any], interpretation: dict[str, Any] | None
             line["note"] = ""
             line["review_reasons"] = []
             line["original_text"] = ""
-            line["diff_html"] = _escape_with_placeholders(line.get("text", ""))
 
     actions = interpretation.get("actions", [])
 
@@ -145,7 +73,6 @@ def build_report(template: dict[str, Any], interpretation: dict[str, Any] | None
                     line["note"] = action.get("note", "")
                     line["review_reasons"] = action.get("review_reasons", [])
                     line["status_class"] = _line_status_class(line["tags"], line["requires_review"])
-                    _prepare_line_visuals(line)
                     break
 
         elif action_type == "remove":
@@ -157,7 +84,6 @@ def build_report(template: dict[str, Any], interpretation: dict[str, Any] | None
                     line["review_reasons"] = action.get("review_reasons", [])
                     line["status_class"] = _line_status_class(line["tags"], line["requires_review"])
                     line["removed"] = True
-                    _prepare_line_visuals(line)
                     break
 
         elif action_type == "add_after":
@@ -172,7 +98,6 @@ def build_report(template: dict[str, Any], interpretation: dict[str, Any] | None
                 "status_class": _line_status_class(action.get("tags", ["AGREGADO"]), bool(action.get("requires_review", False))),
                 "added": True,
             }
-            _prepare_line_visuals(new_line)
 
             after_id = action.get("after_id")
             insert_idx = len(target_section["lines"])
@@ -182,15 +107,10 @@ def build_report(template: dict[str, Any], interpretation: dict[str, Any] | None
                     insert_idx = idx + 1
                     break
 
+            # Evitar duplicados por id si se procesa varias veces
             already_exists = any(line["id"] == new_line["id"] for line in target_section["lines"])
             if not already_exists:
                 target_section["lines"].insert(insert_idx, new_line)
-
-    # Preparar visuales para líneas no tocadas
-    for section in sections:
-        for line in section["lines"]:
-            if not line.get("diff_html"):
-                _prepare_line_visuals(line)
 
     clean_text = render_clean_text(template["nombre"], sections)
     stats = collect_stats(sections, interpretation)
