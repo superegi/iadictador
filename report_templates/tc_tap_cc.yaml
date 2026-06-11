@@ -1,0 +1,55 @@
+id: tc_tap_cc
+nombre: "TC tórax, abdomen y pelvis CC"
+
+sections:
+  - key: antecedentes
+    title: "Antecedentes"
+    lines:
+      - id: antecedentes_vacio
+        text: ""
+
+  - key: hallazgos
+    title: "Hallazgos"
+    lines:
+      - id: pulmon_volumen
+        text: "Volumen y arquitectura pulmonar conservada."
+      - id: via_aerea
+        text: "Tráquea y bronquios principales permeables."
+      - id: derrame_pleural
+        text: "No hay derrame pleural."
+      - id: neumotorax
+        text: "No hay neumotórax."
+      - id: nodulos_condensacion
+        text: "No hay focos de condensación neumónico. No se observan nódulos pulmonares morfológicamente patológicos."
+      - id: corazon
+        text: "Corazón de tamaño normal. No hay derrame pericárdico."
+      - id: vasos_torax
+        text: "Aorta y resto de los grandes vasos del tórax de calibre conservado."
+      - id: higado
+        text: "Hígado de morfología normal, sin lesiones focales."
+      - id: vesicula_estado
+        text: "Vesícula biliar en repleción parcial, de paredes delgadas."
+      - id: via_biliar
+        text: "No hay dilatación de la vía biliar intrahepática. El colédoco fino."
+      - id: organos_solidos
+        text: "Bazo, páncreas y glándulas suprarrenales sin alteraciones tomográficas."
+      - id: rinones_litiasis
+        text: "Riñones de tamaño normal. No se observa hidronefrosis. No son evidentes litiasis."
+      - id: vasos_abdomen
+        text: "Cava inferior, porta y sus ramas principales de calibre normal."
+      - id: asas
+        text: "Asas de calibre conservado."
+      - id: vejiga
+        text: "Vejiga en repleción parcial, sin imágenes patológicas endoluminales."
+      - id: organo_sexual
+        text: "Próstata de estructura y tamaño normal. Vesículas seminales simétricas."
+      - id: liquido_libre
+        text: "No hay líquido libre significativo."
+      - id: fosas_isquiorrectales
+        text: "Fosas isquiorrectales libres."
+
+  - key: impresion
+    title: "Impresión diagnóstica"
+    lines:
+      - id: impresion_normal
+        text: "Examen sin hallazgos patológicos significativos."

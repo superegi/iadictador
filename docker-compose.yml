@@ -1,0 +1,13 @@
+services:
+  reporte_ia:
+    build: .
+    container_name: reporte_ia_prototype
+    ports:
+      - "8015:8015"
+    volumes:
+      - ./app:/app/app
+      - ./report_templates:/app/report_templates
+      - ./data:/app/data
+    env_file:
+      - .env
+    restart: unless-stopped
