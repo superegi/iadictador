@@ -21,11 +21,11 @@ logs
 uploads
 uploads_iadictador
 
-*.log
-iadictador_estado_*.log
 *.sqlite
 *.sqlite3
 *.db
+*.log
+iadictador_estado_*.log
 
 *.wav
 *.mp3

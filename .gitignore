@@ -33,3 +33,11 @@ uploads/
 env/
 .pytest_cache/
 .mypy_cache/
+
+# IA Dictador - secretos/config local
+
+# IA Dictador - datos/runtime
+
+# IA Dictador - audio local
+
+.DS_Store
