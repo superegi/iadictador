@@ -14,3 +14,22 @@ backups_iadictador/
 backups/
 data/uploads_iadictador/
 salida.txt
+
+# IA Dictador - local/secret/runtime
+.env.*
+!.env.example
+iadictador_estado_*.log
+data/
+storage/
+logs/
+uploads/
+*.wav
+*.mp3
+*.webm
+*.m4a
+*.ogg
+
+# IA Dictador - basura local
+env/
+.pytest_cache/
+.mypy_cache/

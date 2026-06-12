@@ -13,6 +13,12 @@ from sqlalchemy import inspect, text
 
 
 
+
+ENABLE_DOCS = os.getenv("IADICTADOR_ENABLE_DOCS", "1").strip().lower() in {"1", "true", "yes", "on"}
+DOCS_URL = "/docs" if ENABLE_DOCS else None
+REDOC_URL = "/redoc" if ENABLE_DOCS else None
+OPENAPI_URL = "/openapi.json" if ENABLE_DOCS else None
+
 def ensure_iad_template_schema():
     inspector = inspect(engine)
     if "iad_report_templates" not in inspector.get_table_names():
@@ -150,7 +156,10 @@ def ensure_iad_workplace_schema():
 # IAD_WORKPLACE_SCHEMA_HELPER_END
 
 
-app = FastAPI(title="IA Dictador")
+app = FastAPI(
+    docs_url=DOCS_URL,
+    redoc_url=REDOC_URL,
+    openapi_url=OPENAPI_URL,title="IA Dictador")
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
