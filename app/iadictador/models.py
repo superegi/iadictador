@@ -1,14 +1,5 @@
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-)
+from datetime import datetime, timezone
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, JSON, UniqueConstraint, Index, text, func
 from sqlalchemy.orm import relationship
 
 from .db import Base
@@ -57,7 +48,7 @@ class Workplace(Base):
     country = Column(String(120), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
-
+    tariffs_json = Column(String, nullable=True)
 
 class ReportTemplate(Base):
     __tablename__ = "iad_report_templates"
@@ -65,8 +56,13 @@ class ReportTemplate(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("iad_users.id"), nullable=True)
     is_global = Column(Boolean, nullable=False, default=False)
+    is_shared = Column(Boolean, default=False, nullable=False)
+    imported_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=True)
+    import_source = Column(String, nullable=True)
+
 
     radiology_use = Column(String(20), nullable=False)
+    body_region = Column(String, nullable=True)
     template_name = Column(String(255), nullable=False)
     title = Column(String(255), nullable=True)
     technique = Column(Text, nullable=True)

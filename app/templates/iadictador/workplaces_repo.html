@@ -1,0 +1,176 @@
+{% extends "iadictador/base.html" %}
+{% block title %}Lugares de trabajo{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <div class="top-actions">
+    <div style="flex:1;">
+      <h3>Lugares de trabajo</h3>
+      <p class="muted">Repositorio propio. Guarda cuánto paga o cuánto pesa cada modalidad/tipo de estudio para este lugar.</p>
+    </div>
+    <a class="button back-button" href="/iad/trabajo">Volver</a>
+  </div>
+
+  {% if error %}
+    <div class="error">{{ error }}</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Nuevo lugar de trabajo</h3>
+
+  <form method="post" action="/iad/lugares/nuevo" class="workplace-form">
+    <label>Nombre del lugar de trabajo</label>
+    <input name="name" required placeholder="Ej: Clínica X / Turno remoto / Centro Y">
+
+    <div class="tariff-section">
+      <h4>Modalidades</h4>
+      <p class="muted">Valores opcionales. Puedes usar pesos, créditos o ambos.</p>
+
+      <div class="tariff-grid tariff-head">
+        <div>Modalidad</div>
+        <div>Pago por informe</div>
+        <div>Peso / créditos</div>
+      </div>
+
+      {% for m in modalities %}
+      <div class="tariff-grid">
+        <div class="tariff-label">{{ m }}</div>
+        <input name="price_{{ m }}" inputmode="decimal" placeholder="$ / informe">
+        <input name="credits_{{ m }}" inputmode="decimal" placeholder="créditos">
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="tariff-section">
+      <h4>Tipo de estudio</h4>
+      <p class="muted">Modificadores opcionales para estudios de urgencia, oncológicos o ambulatorios.</p>
+
+      <div class="tariff-grid tariff-head">
+        <div>Tipo</div>
+        <div>Pago adicional / referencia</div>
+        <div>Peso / créditos</div>
+      </div>
+
+      {% for t in study_types %}
+      <div class="tariff-grid">
+        <div class="tariff-label">{{ t }}</div>
+        <input name="price_type_{{ t }}" inputmode="decimal" placeholder="$ / informe">
+        <input name="credits_type_{{ t }}" inputmode="decimal" placeholder="créditos">
+      </div>
+      {% endfor %}
+    </div>
+
+    <button type="submit">Guardar lugar</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>Mis lugares</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Modalidades configuradas</th>
+        <th>Tipos configurados</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in workplaces_repo %}
+      <tr>
+        <td>{{ w.name or "" }}</td>
+        <td>
+          {% for key, val in w.tariffs.modalities.items() %}
+            {% if val.price or val.credits %}
+              <span class="mini-pill">{{ key }}{% if val.price %}: {{ val.price }}{% endif %}{% if val.credits %} / {{ val.credits }} cr{% endif %}</span>
+            {% endif %}
+          {% endfor %}
+        </td>
+        <td>
+          {% for key, val in w.tariffs.study_types.items() %}
+            {% if val.price or val.credits %}
+              <span class="mini-pill">{{ key }}{% if val.price %}: {{ val.price }}{% endif %}{% if val.credits %} / {{ val.credits }} cr{% endif %}</span>
+            {% endif %}
+          {% endfor %}
+        </td>
+        <td>
+          <form method="post" action="/iad/lugares/{{ w.id }}/eliminar" onsubmit="return confirm('Eliminar lugar de trabajo: {{ w.name or '' }}?');">
+            <button type="submit" class="danger-button">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4">No hay lugares de trabajo registrados.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .workplace-form {
+    display: grid;
+    gap: .8rem;
+  }
+
+  .tariff-section {
+    border: 1px solid var(--iad-border);
+    border-radius: 14px;
+    padding: .8rem;
+    background: rgba(255,255,255,.025);
+  }
+
+  .tariff-section h4 {
+    margin: 0 0 .25rem 0;
+  }
+
+  .tariff-grid {
+    display: grid;
+    grid-template-columns: 130px 1fr 1fr;
+    gap: .55rem;
+    align-items: center;
+    margin-top: .45rem;
+  }
+
+  .tariff-head {
+    color: var(--iad-muted);
+    font-size: .86rem;
+    font-weight: 700;
+  }
+
+  .tariff-label {
+    font-weight: 800;
+  }
+
+  .mini-pill {
+    display: inline-flex;
+    margin: .12rem;
+    padding: .2rem .48rem;
+    border-radius: 999px;
+    border: 1px solid var(--iad-border);
+    background: rgba(255,255,255,.04);
+    font-size: .82rem;
+  }
+
+  .danger-button {
+    background: linear-gradient(135deg, #dc2626, #991b1b) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(248,113,113,.55) !important;
+  }
+
+  @media (max-width: 760px) {
+    .tariff-grid {
+      grid-template-columns: 1fr;
+      gap: .35rem;
+    }
+
+    .tariff-head {
+      display: none;
+    }
+  }
+</style>
+
+{% endblock %}

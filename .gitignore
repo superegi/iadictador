@@ -7,3 +7,10 @@ iadictador.sqlite3
 uploads_iadictador/
 backups_iadictador/
 *.log
+.env.*.secrets
+*.sqlite
+*.sqlite3
+*.db
+backups/
+data/uploads_iadictador/
+salida.txt

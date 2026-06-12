@@ -3,87 +3,59 @@
 {% block content %}
 
 <div class="panel">
-  <h3>Crear usuario</h3>
+  <div class="top-actions">
+    <div style="flex:1;">
+      <h3>Usuarios</h3>
+      <p class="muted">Listado simple. Para modificar un usuario, abra su ficha.</p>
+    </div>
+    <a class="button" href="/iad/admin/usuarios/nuevo">Nuevo usuario</a>
+  </div>
+
   {% if error %}
     <div class="error">{{ error }}</div>
   {% endif %}
-
-  <form method="post" action="/iad/admin/usuarios/crear">
-    <div class="grid-3">
-      <div>
-        <label>Usuario</label>
-        <input name="username" required>
-      </div>
-      <div>
-        <label>Email</label>
-        <input name="email" type="email">
-      </div>
-      <div>
-        <label>Rol</label>
-        <select name="role">
-          <option value="user">user</option>
-          <option value="admin">admin</option>
-        </select>
-      </div>
-    </div>
-    <br>
-    <div class="grid-2">
-      <div>
-        <label>Clave temporal</label>
-        <input name="password" required>
-      </div>
-      <div>
-        <label>&nbsp;</label>
-        <button type="submit">Crear usuario</button>
-      </div>
-    </div>
-    <p class="muted">La clave debe tener más de 4 caracteres, al menos una letra y al menos un número. El usuario deberá cambiarla en el primer ingreso.</p>
-  </form>
 </div>
 
 <div class="panel">
-  <h3>Usuarios</h3>
   <table>
     <thead>
       <tr>
         <th>Usuario</th>
+        <th>Email</th>
         <th>Rol</th>
         <th>Activo</th>
-        <th>Cobro visible</th>
-        <th>Cobro habilitado</th>
-        <th>Valor</th>
-        <th>Reset clave</th>
-        <th>Acciones</th>
+        <th>Cobro</th>
+        <th>Último login</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
       {% for u in users %}
       <tr>
         <td>{{ u.username }}</td>
+        <td>{{ u.email or "" }}</td>
         <td>{{ u.role }}</td>
         <td>{{ "sí" if u.is_active else "no" }}</td>
-        <td>{{ "sí" if u.billing_visible else "no" }}</td>
-        <td>{{ "sí" if u.billing_enabled else "no" }}</td>
-        <td>{{ u.price_per_transcription or "" }}</td>
         <td>
-          <form method="post" action="/iad/admin/usuarios/{{ u.id }}/reset">
-            <input name="password" placeholder="nueva clave">
-            <button type="submit" class="secondary">Reset</button>
-          </form>
+          {% if u.billing_enabled %}
+            habilitado · {{ u.price_per_transcription or "" }}
+          {% elif u.billing_visible %}
+            visible
+          {% else %}
+            —
+          {% endif %}
         </td>
         <td>
-          <form method="post" action="/iad/admin/usuarios/{{ u.id }}/toggle" style="margin-bottom:.4rem;">
-            <button type="submit" class="secondary">{{ "Deshabilitar" if u.is_active else "Habilitar" }}</button>
-          </form>
-
-          <form method="post" action="/iad/admin/usuarios/{{ u.id }}/billing">
-            <label><input type="checkbox" name="billing_visible" {% if u.billing_visible %}checked{% endif %}> Ver cobro</label>
-            <label><input type="checkbox" name="billing_enabled" {% if u.billing_enabled %}checked{% endif %}> Cobrar</label>
-            <input name="price_per_transcription" value="{{ u.price_per_transcription or "" }}" placeholder="valor">
-            <button type="submit" class="secondary">Guardar cobro</button>
-          </form>
+          {% if u.last_login_at %}
+            {{ u.last_login_at.strftime("%Y-%m-%d %H:%M:%S") }}
+          {% else %}
+            —
+          {% endif %}
         </td>
+        <td><a href="/iad/admin/usuarios/{{ u.id }}">Abrir</a></td>
       </tr>
+      {% else %}
+      <tr><td colspan="7">Sin usuarios.</td></tr>
       {% endfor %}
     </tbody>
   </table>

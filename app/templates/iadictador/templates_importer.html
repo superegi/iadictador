@@ -1,0 +1,669 @@
+{% extends "iadictador/base.html" %}
+{% block title %}Importador de plantillas
+<style>
+/* IAD_MOBILE_SELECTION_UI_START */
+
+/* Opciones tipo rectángulo completo, sin radio/check visible */
+.export-row label,
+.filter-menu label,
+.filter-chip,
+.option-card {
+  position: relative;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: .45rem;
+  cursor: pointer;
+  border-radius: 12px;
+  border: 1px solid var(--iad-border);
+  background: rgba(255,255,255,.035);
+  color: var(--iad-text);
+  padding: .55rem .75rem;
+}
+
+.export-row label input,
+.filter-menu label input,
+.filter-chip input,
+.option-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.export-row label:has(input:checked),
+.filter-menu label:has(input:checked),
+.filter-chip:has(input:checked),
+.option-card:has(input:checked) {
+  border-color: var(--iad-primary);
+  background: color-mix(in srgb, var(--iad-primary) 20%, transparent);
+  color: var(--iad-text);
+}
+
+.export-row label:has(input:checked)::after,
+.filter-menu label:has(input:checked)::after,
+.filter-chip:has(input:checked)::after,
+.option-card:has(input:checked)::after {
+  content: "✓";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: .8rem;
+  color: var(--iad-primary);
+  font-weight: 800;
+}
+
+/* Región del cuerpo más compacta */
+.filter-menu.wide {
+  width: min(340px, 92vw);
+}
+
+.filter-menu.wide label {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* Popup export más limpio */
+.export-row {
+  grid-template-columns: 105px 1fr 1fr !important;
+}
+
+.export-row > span {
+  font-size: .92rem;
+}
+
+/* Botones rojos/amarillos según rol */
+a.button.back-button,
+button.back-button {
+  background: linear-gradient(135deg, var(--iad-back), var(--iad-back-2)) !important;
+}
+
+button.ai-button,
+a.button.ai-button {
+  background: linear-gradient(135deg, var(--iad-ai), var(--iad-ai-2)) !important;
+  color: var(--iad-ai-text) !important;
+}
+
+@media (max-width: 760px) {
+  .filter-toolbar {
+    align-items: stretch !important;
+  }
+
+  .filter-search,
+  .filter-menu-wrap,
+  .filter-trigger,
+  .filter-toolbar > button {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  .filter-menu {
+    position: static !important;
+    width: 100% !important;
+    margin-top: .45rem;
+  }
+
+  .export-modal {
+    width: 96vw !important;
+    padding: .85rem !important;
+  }
+
+  .export-row {
+    grid-template-columns: 1fr !important;
+    gap: .4rem !important;
+  }
+
+  .export-row label {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .modal-actions {
+    justify-content: stretch !important;
+  }
+
+  .modal-actions button,
+  .modal-actions a {
+    flex: 1 1 100%;
+  }
+}
+/* IAD_MOBILE_SELECTION_UI_END */
+</style>
+
+
+<style>
+/* IAD_IMPORTER_COMPACT_START */
+.form-compact {
+  display: grid;
+  gap: .62rem;
+}
+
+.form-compact br {
+  display: none;
+}
+
+.form-compact label {
+  margin-top: .2rem;
+}
+
+.form-compact textarea.auto-fit {
+  overflow: hidden;
+  resize: vertical;
+  line-height: 1.35;
+}
+
+.form-compact textarea.mini-field {
+  min-height: 38px !important;
+}
+
+.form-compact textarea.small-field {
+  min-height: 54px !important;
+}
+
+.form-compact textarea.large-field {
+  min-height: 190px !important;
+}
+/* IAD_IMPORTER_COMPACT_END */
+</style>
+
+
+<style>
+/* IAD_IMPORTER_SPACING_FIX_START */
+.form-compact {
+  display: grid;
+  gap: .45rem !important;
+}
+
+.form-compact br {
+  display: none !important;
+}
+
+.form-compact label {
+  margin-top: .15rem !important;
+  margin-bottom: .12rem !important;
+}
+
+.form-compact textarea.auto-fit,
+.form-compact textarea.ai-field {
+  overflow: hidden;
+  resize: vertical;
+  line-height: 1.32;
+}
+
+.form-compact textarea[name="technique"],
+.form-compact textarea[name="background"],
+.form-compact textarea[name="specific_rules_json"] {
+  min-height: 34px !important;
+}
+
+.form-compact textarea[name="title"],
+.form-compact textarea[name="impression"] {
+  min-height: 48px !important;
+}
+
+.form-compact textarea[name="findings"] {
+  min-height: 150px !important;
+}
+
+.empty-note {
+  font-size: .74rem !important;
+  line-height: 1 !important;
+  margin: .12rem 0 .2rem 0 !important;
+  opacity: .55;
+}
+
+@media (max-width: 760px) {
+  .form-compact {
+    gap: .38rem !important;
+  }
+
+  .form-compact textarea[name="findings"] {
+    min-height: 130px !important;
+  }
+}
+/* IAD_IMPORTER_SPACING_FIX_END */
+</style>
+
+
+<script>
+/* IAD_EMPTY_AUTOFIT_FIX_START */
+document.addEventListener("DOMContentLoaded", function () {
+  function fit(el) {
+    if (!el || !el.matches("textarea")) return;
+    const empty = !(el.value || "").trim();
+    el.style.height = "auto";
+    if (empty) {
+      if (["technique", "background", "specific_rules_json"].includes(el.name)) {
+        el.style.height = "34px";
+      } else if (["title", "impression"].includes(el.name)) {
+        el.style.height = "48px";
+      }
+    } else {
+      el.style.height = Math.max(el.scrollHeight + 2, 48) + "px";
+    }
+  }
+
+  document.querySelectorAll("textarea").forEach(function (el) {
+    fit(el);
+    el.addEventListener("input", function () { fit(el); });
+  });
+});
+/* IAD_EMPTY_AUTOFIT_FIX_END */
+</script>
+
+{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <div class="top-actions">
+    <div style="flex:1;">
+      <h3>Importador de plantillas</h3>
+      <p class="muted">
+        Pega texto plano o sube uno o varios archivos. La IA estructura las plantillas, pero no modifica el texto clínico.
+      </p>
+    </div>
+    <a class="button back-button" href="/iad/plantillas">Volver</a>
+  </div>
+
+  {% if error %}
+    <div class="error">{{ error }}</div>
+  {% endif %}
+  {% if ok %}
+    <div class="ok">{{ ok }}</div>
+  {% endif %}
+  {% if warnings %}
+    <div class="error">
+      {% for w in warnings %}
+        <div>{{ w }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+{% if import_report %}
+<div class="panel">
+  <h3>Resumen de importación</h3>
+  <p class="muted">Plantillas guardadas en esta tanda.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre guardado</th>
+        <th>Modalidad</th>
+        <th>Título</th>
+        <th>Visibilidad</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in import_report %}
+      <tr>
+        <td>{{ item.template_name }}</td>
+        <td>{{ item.radiology_use }}</td>
+        <td style="white-space:pre-line;">{{ item.title or "" }}</td>
+        <td>{{ "Compartida" if item.is_global else "Propia" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <br>
+  <a class="button" href="/iad/plantillas">Ir al repositorio</a>
+  <a class="button secondary" href="/iad/plantillas/importador">Importar más</a>
+</div>
+{% endif %}
+
+{% if not current_candidate and not import_report %}
+
+<div class="panel">
+  <h3>Entrada</h3>
+
+  <form method="post" action="/iad/plantillas/importador/analizar" enctype="multipart/form-data">
+    <label>Texto plano</label>
+    <textarea name="raw_text" style="min-height:340px;" placeholder="Pegue aquí una plantilla o varias plantillas. Ej: RX rodillas artrosis, título, Hallazgos, Impresión diagnóstica."></textarea>
+
+    <br><br>
+
+    <label>Archivos</label>
+    <input name="template_files" type="file" multiple accept=".txt,.md,.text,.csv,.html">
+
+    <br><br>
+
+    <div class="grid-2">
+      <div>
+        <label>Modo de análisis</label>
+        <select name="use_ai">
+          <option value="1" selected>IA inteligente + fallback local</option>
+          <option value="0">Solo parser local</option>
+        </select>
+      </div>
+    </div>
+
+    <br>
+
+    <details class="fold-panel">
+      <summary>Qué detecta</summary>
+      <div class="fold-body">
+        <ul>
+          <li>Nombre plantilla</li>
+          <li>Modalidad, inferida desde nombre/título</li>
+          <li>Título informe, hasta 2 líneas visibles</li>
+          <li>Técnica, si existe</li>
+          <li>Antecedentes, si existen</li>
+          <li>Hallazgos</li>
+          <li>Impresión diagnóstica</li>
+          <li>Sugerencias de revisión antes de guardar</li>
+        </ul>
+        <p class="muted">Los tags no los escribe la IA. Se agregan manualmente al guardar cada plantilla.</p>
+      </div>
+    </details>
+
+    <br>
+
+    <button type="submit">Analizar entrada</button>
+  </form>
+</div>
+
+{% elif current_candidate %}
+
+<div class="panel">
+  <div class="top-actions">
+    <div style="flex:1;">
+      <h3>Validar plantilla {{ current_index + 1 }} de {{ total_candidates }}</h3>
+      <p class="muted">
+        Motor usado: <span class="ai-badge">Importación con IA</span><div class="ai-note">La IA sugerirá la <strong>región del cuerpo</strong>. Esta sugerencia es opcional y puedes corregirla libremente antes de guardar.</div> <strong>{{ engine }}</strong>. Al guardar, esta vista se descarta y se pasa a la siguiente plantilla detectada.
+      </p>
+    </div>
+    <a class="button secondary" href="/iad/plantillas/importador">Cancelar importación</a>
+  </div>
+
+  {% if duplicate_matches %}
+  <div class="duplicate-modal-backdrop" id="duplicateModal">
+    <div class="duplicate-modal">
+      <h3>Plantilla parecida detectada</h3>
+      <p>
+        Ya existe una plantilla con nombre parecido. Revísala antes de guardar esta nueva plantilla.
+        No se reemplazará nada. Si confirmas y el nombre ya existe, se guardará como <strong>(2)</strong>, <strong>(3)</strong>, etc.
+      </p>
+
+      <div class="duplicate-list">
+        {% for d in duplicate_matches %}
+        <div class="duplicate-card">
+          <strong>{{ d.template_name }}</strong>
+          <div class="muted">{{ d.radiology_use }} · {{ d.title or "" }}</div>
+          <pre>{{ d.preview }}</pre>
+        </div>
+        {% endfor %}
+      </div>
+
+      <form class="form-compact" method="post" action="/iad/plantillas/importador/guardar_actual">
+        <input type="hidden" name="candidates_payload" value="{{ candidates_payload }}">
+        <input type="hidden" name="current_index" value="{{ current_index }}">
+        <input type="hidden" name="engine" value="{{ engine }}">
+        <input type="hidden" name="confirm_similar" value="1">
+
+        {% for key, value in submitted_fields.items() %}
+          <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+
+        <div class="modal-actions">
+          <button type="submit">Guardar igual como nueva plantilla</button>
+          <button type="button" class="secondary" onclick="document.getElementById('duplicateModal').remove();">Volver a revisar esta plantilla</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <form class="form-compact" method="post" action="/iad/plantillas/importador/guardar_actual">
+    <input type="hidden" name="candidates_payload" value="{{ candidates_payload }}">
+    <input type="hidden" name="current_index" value="{{ current_index }}">
+    <input type="hidden" name="engine" value="{{ engine }}">
+
+    <div>
+      <label>Nombre plantilla</label>
+      <input name="template_name" class="ai-field auto-fit" value="{{ current_candidate.template_name or '' }}" required>
+    </div>
+
+    <br>
+
+    <div class="grid-2">
+      <div>
+        <label>Modalidad</label>
+        <select name="radiology_use" class="ai-field auto-fit" required>
+          {% set current_modality = current_candidate.modality %}
+          <option value="">Seleccionar</option>
+          <option value="TC" {% if current_modality == "TC" %}selected{% endif %}>TC</option>
+          <option value="MR" {% if current_modality == "MR" %}selected{% endif %}>MR</option>
+          <option value="US" {% if current_modality == "US" %}selected{% endif %}>US</option>
+          <option value="RX" {% if current_modality == "RX" %}selected{% endif %}>RX</option>
+          <option value="XA" {% if current_modality == "XA" %}selected{% endif %}>XA</option>
+          <option value="MG" {% if current_modality == "MG" %}selected{% endif %}>MG</option>
+          <option value="PET" {% if current_modality == "PET" %}selected{% endif %}>PET</option>
+          <option value="NM" {% if current_modality == "NM" %}selected{% endif %}>NM</option>
+          <option value="OTRO" {% if current_modality == "OTRO" %}selected{% endif %}>OTRO</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Región del cuerpo</label>
+        {% set current_region = current_candidate.body_region if current_candidate.body_region else '' %}
+        <select name="body_region" class="ai-field auto-fit">
+          <option value="">Sin definir</option>
+          <option value="Cabeza, cuello y columna" {% if current_region == "Cabeza, cuello y columna" %}selected{% endif %}>Cabeza, cuello y columna</option>
+          <option value="Torax, abdomen y pelvis" {% if current_region == "Torax, abdomen y pelvis" %}selected{% endif %}>Torax, abdomen y pelvis</option>
+          <option value="Extremidades y articulaciones" {% if current_region == "Extremidades y articulaciones" %}selected{% endif %}>Extremidades y articulaciones</option>
+          <option value="Mamaria y ginecología" {% if current_region == "Mamaria y ginecología" %}selected{% endif %}>Mamaria y ginecología</option>
+        </select>
+      </div>
+    </div>
+
+    <br>
+
+    <label>Tags</label>
+    <input name="tags" class="auto-fit" value="" placeholder="tags manuales: rodilla, artrosis, rx">
+
+    <br>
+
+    <label>Título informe</label>
+    <textarea name="title" class="ai-field auto-fit" class="auto-fit small-field">{{ current_candidate.title if current_candidate.title else '' }}</textarea>
+
+    <br><br>
+
+    {% if current_candidate.suggestions %}
+    <div class="suggestion-box">
+      <strong>Sugerencias antes de guardar</strong>
+      <ul>
+        {% for s in current_candidate.suggestions %}
+        <li>{{ s }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <br>
+    {% endif %}
+
+    <label>Técnica</label>
+    <textarea name="technique" class="ai-field auto-fit" class="auto-fit mini-field">{{ '' if current_candidate.technique in [None, 'None'] else current_candidate.technique }}</textarea>
+
+    <br><br>
+
+    <label>Antecedentes</label>
+    <textarea name="background" class="ai-field auto-fit" class="auto-fit mini-field">{{ '' if current_candidate.background in [None, 'None'] else current_candidate.background }}</textarea>
+
+    <br><br>
+
+    <label>Hallazgos</label>
+    <textarea name="findings" class="ai-field auto-fit" class="auto-fit large-field">{{ current_candidate.findings if current_candidate.findings else '' }}</textarea>
+
+    <br><br>
+
+    <label>Impresión diagnóstica</label>
+    <textarea name="impression" class="ai-field auto-fit" class="auto-fit small-field">{{ '' if current_candidate.impression in [None, 'None'] else current_candidate.impression }}</textarea>
+
+    <br><br>
+
+    <label>Reglas específicas / notas de uso</label>
+    <textarea name="specific_rules_json" class="ai-field auto-fit" class="auto-fit mini-field">{{ '' if current_candidate.specific_rules_json in [None, 'None'] else current_candidate.specific_rules_json }}</textarea>
+
+    <br><br>
+
+    <div class="save-row">
+      {% if current_user.role == "admin" %}
+      <label class="inline-checkbox">
+        <input type="checkbox" name="is_shared">
+        Compartida con otros usuarios
+      </label>
+      {% endif %}
+
+      <button type="submit">Guardar esta plantilla</button>
+      <button type="submit" formaction="/iad/plantillas/importador/saltar_actual" class="secondary">Descartar y pasar a la siguiente</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>Entrada original</h3>
+  <textarea readonly style="min-height:180px;">{{ raw_text }}</textarea>
+</div>
+
+{% endif %}
+
+<style>
+  .suggestion-box {
+    padding: .8rem 1rem;
+    border: 1px solid rgba(245, 158, 11, .35);
+    border-radius: 14px;
+    background: rgba(245, 158, 11, .10);
+  }
+
+  .suggestion-box ul {
+    margin: .5rem 0 0 1.2rem;
+  }
+
+  textarea.auto-fit {
+    overflow: hidden;
+    resize: vertical;
+    line-height: 1.35;
+  }
+
+  textarea.mini-field {
+    min-height: 42px;
+  }
+
+  textarea.small-field {
+    min-height: 64px;
+  }
+
+  textarea.large-field {
+    min-height: 220px;
+  }
+
+  .save-row {
+    display: flex;
+    gap: .75rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .inline-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    margin-right: auto;
+  }
+
+  .duplicate-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0,0,0,.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .duplicate-modal {
+    width: min(920px, 96vw);
+    max-height: 88vh;
+    overflow: auto;
+    border-radius: 18px;
+    background: var(--panel, #111827);
+    border: 1px solid rgba(255,255,255,.18);
+    padding: 1.2rem;
+    box-shadow: 0 24px 80px rgba(0,0,0,.45);
+  }
+
+  .duplicate-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: .8rem;
+    margin: 1rem 0;
+  }
+
+  .duplicate-card {
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 14px;
+    padding: .8rem;
+    background: rgba(255,255,255,.04);
+  }
+
+  .duplicate-card pre {
+    margin: .6rem 0 0 0;
+    max-height: 180px;
+    overflow: hidden;
+    white-space: pre-wrap;
+    font-size: .85rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: .7rem;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+</style>
+
+<script>
+  function autoFitTextarea(el) {
+    if (!el) return;
+    el.style.height = "auto";
+    const minHeight = parseInt(window.getComputedStyle(el).minHeight || "42", 10);
+    const nextHeight = Math.max(minHeight, el.scrollHeight + 2);
+    el.style.height = nextHeight + "px";
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("textarea.auto-fit").forEach(function (el) {
+      autoFitTextarea(el);
+      el.addEventListener("input", function () {
+        autoFitTextarea(el);
+      });
+    });
+  });
+
+  function updateEmptyNotes() {
+    document.querySelectorAll("textarea.auto-fit").forEach(function (el) {
+      let note = el.nextElementSibling;
+      if (!note || !note.classList || !note.classList.contains("empty-note")) {
+        note = document.createElement("div");
+        note.className = "empty-note";
+        el.insertAdjacentElement("afterend", note);
+      }
+      if ((el.value || "").trim().length === 0) {
+        note.classList.add("is-empty");
+      } else {
+        note.classList.remove("is-empty");
+      }
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    updateEmptyNotes();
+    document.querySelectorAll("textarea.auto-fit").forEach(function (el) {
+      el.addEventListener("input", updateEmptyNotes);
+    });
+  });
+</script>
+
+{% endblock %}

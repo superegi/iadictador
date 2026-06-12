@@ -1,0 +1,90 @@
+{% extends "iadictador/base.html" %}
+{% block title %}Mi perfil{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <h3>Mi perfil</h3>
+  <p class="muted">Datos propios del usuario. Estos datos ayudan a personalizar el flujo y la auditoría.</p>
+
+  {% if ok %}
+    <div class="ok">{{ ok }}</div>
+  {% endif %}
+  {% if error %}
+    <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/iad/perfil">
+    <div class="grid-3">
+      <div>
+        <label>Usuario</label>
+        <input value="{{ current_user.username }}" readonly>
+      </div>
+      <div>
+        <label>Rol</label>
+        <input value="{{ current_user.role }}" readonly>
+      </div>
+      <div>
+        <label>Email</label>
+        <input name="email" type="email" value="{{ current_user.email or '' }}">
+      </div>
+    </div>
+
+    <br>
+
+    <div class="grid-3">
+      <div>
+        <label>Nombre</label>
+        <input name="first_name" value="{{ current_user.first_name or '' }}">
+      </div>
+      <div>
+        <label>Apellido</label>
+        <input name="last_name" value="{{ current_user.last_name or '' }}">
+      </div>
+      <div>
+        <label>Fecha nacimiento</label>
+        <input name="birthdate" value="{{ current_user.birthdate or '' }}" placeholder="AAAA-MM-DD">
+      </div>
+    </div>
+
+    <br>
+
+    <div class="grid-3">
+      <div>
+        <label>País</label>
+        <input name="country" value="{{ current_user.country or '' }}">
+      </div>
+      <div>
+        <label>Zona horaria</label>
+        <select name="timezone">
+<option value="">Sin definir</option>
+<option value="America/Santiago" {% if current_user.timezone == "America/Santiago" %}selected{% endif %}>America/Santiago</option>
+<option value="America/Argentina/Buenos_Aires" {% if current_user.timezone == "America/Argentina/Buenos_Aires" %}selected{% endif %}>America/Argentina/Buenos_Aires</option>
+<option value="America/Lima" {% if current_user.timezone == "America/Lima" %}selected{% endif %}>America/Lima</option>
+<option value="America/Bogota" {% if current_user.timezone == "America/Bogota" %}selected{% endif %}>America/Bogota</option>
+<option value="America/Mexico_City" {% if current_user.timezone == "America/Mexico_City" %}selected{% endif %}>America/Mexico_City</option>
+<option value="America/New_York" {% if current_user.timezone == "America/New_York" %}selected{% endif %}>America/New_York</option>
+<option value="Europe/Madrid" {% if current_user.timezone == "Europe/Madrid" %}selected{% endif %}>Europe/Madrid</option>
+<option value="UTC" {% if current_user.timezone == "UTC" %}selected{% endif %}>UTC</option>
+</select>
+      </div>
+      <div>
+        <label>Especialidad</label>
+        <input name="specialty" value="{{ current_user.specialty or '' }}">
+      </div>
+    </div>
+
+    <br>
+
+    <div class="grid-3">
+      <div>
+        <label>Subespecialidad</label>
+        <input name="subspecialty" value="{{ current_user.subspecialty or '' }}">
+      </div>
+    </div>
+
+    <br>
+    <button type="submit">Guardar perfil</button>
+  </form>
+</div>
+
+{% endblock %}

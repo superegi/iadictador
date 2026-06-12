@@ -1,0 +1,688 @@
+{% extends "iadictador/base.html" %}
+{% block title %}Plantillas
+<style>
+/* IAD_MOBILE_SELECTION_UI_START */
+
+/* Opciones tipo rectángulo completo, sin radio/check visible */
+.export-row label,
+.filter-menu label,
+.filter-chip,
+.option-card {
+  position: relative;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: .45rem;
+  cursor: pointer;
+  border-radius: 12px;
+  border: 1px solid var(--iad-border);
+  background: rgba(255,255,255,.035);
+  color: var(--iad-text);
+  padding: .55rem .75rem;
+}
+
+.export-row label input,
+.filter-menu label input,
+.filter-chip input,
+.option-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.export-row label:has(input:checked),
+.filter-menu label:has(input:checked),
+.filter-chip:has(input:checked),
+.option-card:has(input:checked) {
+  border-color: var(--iad-primary);
+  background: color-mix(in srgb, var(--iad-primary) 20%, transparent);
+  color: var(--iad-text);
+}
+
+.export-row label:has(input:checked)::after,
+.filter-menu label:has(input:checked)::after,
+.filter-chip:has(input:checked)::after,
+.option-card:has(input:checked)::after {
+  content: "✓";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: .8rem;
+  color: var(--iad-primary);
+  font-weight: 800;
+}
+
+/* Región del cuerpo más compacta */
+.filter-menu.wide {
+  width: min(340px, 92vw);
+}
+
+.filter-menu.wide label {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* Popup export más limpio */
+.export-row {
+  grid-template-columns: 105px 1fr 1fr !important;
+}
+
+.export-row > span {
+  font-size: .92rem;
+}
+
+/* Botones rojos/amarillos según rol */
+a.button.back-button,
+button.back-button {
+  background: linear-gradient(135deg, var(--iad-back), var(--iad-back-2)) !important;
+}
+
+button.ai-button,
+a.button.ai-button {
+  background: linear-gradient(135deg, var(--iad-ai), var(--iad-ai-2)) !important;
+  color: var(--iad-ai-text) !important;
+}
+
+@media (max-width: 760px) {
+  .filter-toolbar {
+    align-items: stretch !important;
+  }
+
+  .filter-search,
+  .filter-menu-wrap,
+  .filter-trigger,
+  .filter-toolbar > button {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  .filter-menu {
+    position: static !important;
+    width: 100% !important;
+    margin-top: .45rem;
+  }
+
+  .export-modal {
+    width: 96vw !important;
+    padding: .85rem !important;
+  }
+
+  .export-row {
+    grid-template-columns: 1fr !important;
+    gap: .4rem !important;
+  }
+
+  .export-row label {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .modal-actions {
+    justify-content: stretch !important;
+  }
+
+  .modal-actions button,
+  .modal-actions a {
+    flex: 1 1 100%;
+  }
+}
+/* IAD_MOBILE_SELECTION_UI_END */
+</style>
+
+
+<style>
+/* IAD_FILTER_ACTIVE_START */
+.filter-trigger.active-filter {
+  border-color: var(--iad-ai) !important;
+  background: color-mix(in srgb, var(--iad-ai) 17%, var(--iad-input-bg)) !important;
+  color: var(--iad-text);
+}
+
+.filter-trigger.active-filter span {
+  color: var(--iad-ai);
+  font-weight: 800;
+}
+/* IAD_FILTER_ACTIVE_END */
+</style>
+
+
+<style>
+/* IAD_DELETE_TEMPLATE_UI_START */
+.actions-cell {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inline-delete-form {
+  display: inline;
+  margin: 0;
+}
+
+.danger-button {
+  background: linear-gradient(135deg, #dc2626, #991b1b) !important;
+  color: #fff !important;
+  border: 1px solid rgba(248,113,113,.55) !important;
+  padding: .35rem .6rem !important;
+  font-size: .82rem !important;
+}
+/* IAD_DELETE_TEMPLATE_UI_END */
+</style>
+
+
+<div class="export-backdrop" id="deleteModal" style="display:none;">
+  <div class="export-modal">
+    <div class="modal-header">
+      <div>
+        <h3>Eliminar plantillas</h3>
+        <p class="muted">Se eliminarán solo las plantillas seleccionadas. Esta acción no se puede deshacer.</p>
+      </div>
+      <button type="button" class="back-button" onclick="closeDeleteModal()">Cerrar</button>
+    </div>
+
+    <form method="post" action="/iad/plantillas/eliminar_lote" onsubmit="return confirm('Confirmar eliminación de las plantillas seleccionadas. Esta acción no se puede deshacer.');">
+      <input type="hidden" name="selected_ids" id="deleteSelectedIds">
+
+      <div class="delete-summary" id="deleteSummary"></div>
+
+      <br>
+
+      <div class="modal-actions">
+        <button type="submit" class="danger-button">Eliminar seleccionadas</button>
+        <button type="button" class="secondary" onclick="closeDeleteModal()">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<script>
+function openDeleteModal() {
+  const ids = Array.from(document.querySelectorAll(".template-check:checked")).map(x => x.value);
+  const summary = document.getElementById("deleteSummary");
+
+  if (!ids.length) {
+    alert("Selecciona una o más plantillas para eliminar.");
+    return;
+  }
+
+  document.getElementById("deleteSelectedIds").value = ids.join(",");
+  summary.textContent = "Plantillas seleccionadas: " + ids.length;
+  document.getElementById("deleteModal").style.display = "flex";
+}
+
+function closeDeleteModal() {
+  document.getElementById("deleteModal").style.display = "none";
+}
+</script>
+
+
+<style>
+/* IAD_REPO_DELETE_SINGLE_BUTTON_START */
+.danger-button {
+  background: linear-gradient(135deg, #dc2626, #991b1b) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(248,113,113,.55) !important;
+}
+
+.delete-summary {
+  padding: .8rem;
+  border-radius: 12px;
+  border: 1px solid rgba(248,113,113,.35);
+  background: rgba(220,38,38,.10);
+}
+/* IAD_REPO_DELETE_SINGLE_BUTTON_END */
+</style>
+
+{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <div class="top-actions">
+    <div style="flex:1;">
+      <h3>Repositorio de plantillas</h3>
+      <p class="muted">Plantillas propias y compartidas. Cada plantilla mantiene un dueño.</p>
+    </div>
+    <button class="secondary" type="button" onclick="openExportModal()">Exportar</button>
+    <button class="danger-button" type="button" onclick="openDeleteModal()">Eliminar</button>
+    <a class="button secondary" href="/iad/plantillas/importador">Importar plantillas</a>
+    <a class="button" href="/iad/plantillas/nueva">Nueva plantilla</a>
+  </div>
+</div>
+
+<div class="panel compact-filter-panel">
+  <div class="filter-toolbar">
+    <div class="filter-search">
+      <label>Buscar</label>
+      <input id="filterText" placeholder="nombre, título, tags">
+    </div>
+
+    <div class="filter-menu-wrap">
+      <button type="button" class="filter-trigger" onclick="toggleFilterMenu('modalityMenu')">
+        Modalidad <span id="modalityCount">Todas</span>
+      </button>
+      <div class="filter-menu" id="modalityMenu">
+        {% for m in ["TC", "MR", "US", "RX", "XA", "MG", "PET", "NM", "OTRO"] %}
+        <label><input type="checkbox" value="{{ m }}" data-filter="modality"> {{ m }}</label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="filter-menu-wrap">
+      <button type="button" class="filter-trigger" onclick="toggleFilterMenu('regionMenu')">
+        Región <span id="regionCount">Todas</span>
+      </button>
+      <div class="filter-menu wide" id="regionMenu">
+        {% for r in ["Cabeza, cuello y columna", "Torax, abdomen y pelvis", "Extremidades y articulaciones", "Mamaria y ginecología", ""] %}
+        <label><input type="checkbox" value="{{ r }}" data-filter="region"> {{ r if r else "Sin definir" }}</label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="filter-menu-wrap">
+      <button type="button" class="filter-trigger" onclick="toggleFilterMenu('sharedMenu')">
+        Visibilidad <span id="sharedCount">Todas</span>
+      </button>
+      <div class="filter-menu" id="sharedMenu">
+        <label><input type="radio" name="shared_filter" value="" checked> Todas</label>
+        <label><input type="radio" name="shared_filter" value="private"> Privadas</label>
+        <label><input type="radio" name="shared_filter" value="shared"> Compartidas</label>
+      </div>
+    </div>
+
+    <button type="button" class="secondary" onclick="clearFilters()">Limpiar</button>
+  </div>
+</div>
+
+<div class="panel">
+  <table id="templatesTable">
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="selectAllTemplates"></th>
+        <th>Plantilla</th>
+        <th>Modalidad</th>
+        <th>Región</th>
+        <th>Título</th>
+        <th>Dueño</th>
+        <th>Compartida</th>
+        <th>Tags</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in templates_repo %}
+      <tr class="template-row"
+          data-id="{{ t.id }}"
+          data-name="{{ (t.template_name or '')|lower }}"
+          data-modality="{{ t.radiology_use or '' }}"
+          data-region="{{ t.body_region or '' }}"
+          data-shared="{{ 'shared' if t.is_shared else 'private' }}"
+          data-search="{{ ((t.template_name or '') ~ ' ' ~ (t.title or '') ~ ' ' ~ (t.tags or ''))|lower }}">
+        <td><input class="template-check" type="checkbox" value="{{ t.id }}"></td>
+        <td>{{ ((t.radiology_use or "") ~ " - " ~ (t.template_name or "")) if (t.radiology_use or t.template_name) else "" }}</td>
+        <td>{{ t.radiology_use or "" }}</td>
+        <td>{{ t.body_region or "—" }}</td>
+        <td style="white-space:pre-line;">{{ t.title or "" }}</td>
+        <td>
+          {% if t.owner_username %}
+            {{ t.owner_username }}
+          {% elif t.user_id %}
+            usuario #{{ t.user_id }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>{{ "sí" if t.is_shared else "no" }}</td>
+        <td>{{ t.tags or "" }}</td>
+        
+<td class="actions-cell"><a href="/iad/plantillas/{{ t.id }}">Abrir</a></td>
+
+      </tr>
+      {% else %}
+      <tr><td colspan="9">No hay plantillas registradas.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="export-backdrop" id="exportModal" style="display:none;">
+  <div class="export-modal">
+    <div class="modal-header">
+      <div>
+        <h3>Exportar plantillas</h3>
+        <p class="muted">Seleccionadas o visibles por filtro.</p>
+      </div>
+      <button type="button" class="secondary" onclick="closeExportModal()">Cerrar</button>
+    </div>
+
+    <form id="exportForm" method="post" action="/iad/plantillas/exportar">
+      <input type="hidden" name="selected_ids" id="exportSelectedIds">
+
+      <div class="export-compact-grid">
+        <div class="export-row">
+          <span>Organización</span>
+          <label><input type="radio" name="file_mode" value="single" checked> Único</label>
+          <label><input type="radio" name="file_mode" value="separate"> Separados ZIP</label>
+        </div>
+
+        <div class="export-row">
+          <span>Formato</span>
+          <label><input type="radio" name="export_format" value="txt" checked> TXT</label>
+          <label><input type="radio" name="export_format" value="json"> JSON</label>
+        </div>
+
+        <div class="export-row">
+          <span>Campos</span>
+          <label><input type="radio" name="fields_mode" value="nonempty" checked> Solo con contenido</label>
+          <label><input type="radio" name="fields_mode" value="all"> Todos</label>
+        </div>
+
+        <div class="export-row">
+          <span>Etiquetas</span>
+          <label><input type="radio" name="labels_mode" value="with_labels" checked> Con nombres</label>
+          <label><input type="radio" name="labels_mode" value="content_only"> Solo contenido</label>
+        </div>
+      </div>
+
+      <br>
+
+      <div class="modal-actions">
+        <button type="submit">Exportar</button>
+        <button type="button" class="secondary" onclick="closeExportModal()">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .compact-filter-panel {
+    padding-top: .85rem;
+    padding-bottom: .85rem;
+  }
+
+  .filter-toolbar {
+    display: flex;
+    gap: .7rem;
+    align-items: end;
+    flex-wrap: wrap;
+  }
+
+  .filter-search {
+    flex: 1 1 280px;
+  }
+
+  .filter-menu-wrap {
+    position: relative;
+  }
+
+  .filter-trigger {
+    min-width: 148px;
+    display: flex;
+    justify-content: space-between;
+    gap: .6rem;
+    background: var(--iad-input-bg);
+    border: 1px solid var(--iad-border);
+  }
+
+  .filter-trigger span {
+    color: var(--iad-muted);
+    font-size: .88rem;
+  }
+
+  .filter-menu {
+    display: none;
+    position: absolute;
+    z-index: 500;
+    top: calc(100% + .4rem);
+    left: 0;
+    width: 230px;
+    padding: .55rem;
+    border: 1px solid var(--iad-border);
+    border-radius: var(--iad-radius);
+    background: var(--iad-panel-strong);
+    box-shadow: var(--iad-shadow-modal);
+  }
+
+  .filter-menu.wide {
+    width: 300px;
+  }
+
+  .filter-menu.open {
+    display: grid;
+    gap: .3rem;
+  }
+
+  .filter-menu label {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .42rem .5rem;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+
+  .filter-menu label:hover {
+    background: rgba(255,255,255,.06);
+  }
+
+  .filter-menu input {
+    accent-color: var(--iad-primary);
+  }
+
+  .export-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0,0,0,.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .export-modal {
+    width: min(760px, 96vw);
+    max-height: 88vh;
+    overflow: auto;
+    border-radius: 18px;
+    background: var(--iad-panel);
+    border: 1px solid var(--iad-border);
+    padding: 1.1rem;
+    box-shadow: var(--iad-shadow-modal);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    gap: .8rem;
+    align-items: start;
+  }
+
+  .modal-header h3 {
+    margin-bottom: .15rem;
+  }
+
+  .export-compact-grid {
+    display: grid;
+    gap: .55rem;
+  }
+
+  .export-row {
+    display: grid;
+    grid-template-columns: 130px 1fr 1fr;
+    gap: .55rem;
+    align-items: center;
+    border: 1px solid var(--iad-border);
+    border-radius: 13px;
+    padding: .55rem;
+    background: rgba(255,255,255,.025);
+  }
+
+  .export-row > span {
+    color: var(--iad-muted);
+    font-weight: 700;
+  }
+
+  .export-row label {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .45rem .6rem;
+    border: 1px solid var(--iad-border);
+    border-radius: 10px;
+    background: rgba(255,255,255,.035);
+    cursor: pointer;
+  }
+
+  .export-row label:has(input:checked) {
+    border-color: var(--iad-primary);
+    background: color-mix(in srgb, var(--iad-primary) 18%, transparent);
+  }
+
+  .export-row input {
+    accent-color: var(--iad-primary);
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: .7rem;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 760px) {
+    .export-row {
+      grid-template-columns: 1fr;
+    }
+
+    .filter-trigger {
+      min-width: 100%;
+    }
+
+    .filter-menu-wrap {
+      flex: 1 1 160px;
+    }
+
+    .filter-menu {
+      width: min(300px, 92vw);
+    }
+  }
+</style>
+
+<script>
+  function toggleFilterMenu(id) {
+    document.querySelectorAll(".filter-menu").forEach(menu => {
+      if (menu.id !== id) menu.classList.remove("open");
+    });
+    document.getElementById(id).classList.toggle("open");
+  }
+
+  document.addEventListener("click", function (ev) {
+    if (!ev.target.closest(".filter-menu-wrap")) {
+      document.querySelectorAll(".filter-menu").forEach(menu => menu.classList.remove("open"));
+    }
+  });
+
+  function checkedValues(filterName) {
+    return Array.from(document.querySelectorAll('input[data-filter="' + filterName + '"]:checked')).map(x => x.value);
+  }
+
+  function radioValue(name) {
+    const el = document.querySelector('input[name="' + name + '"]:checked');
+    return el ? el.value : "";
+  }
+
+  function updateFilterCounts() {
+    const modalities = checkedValues("modality");
+    const regions = checkedValues("region");
+    const shared = radioValue("shared_filter");
+
+    const modalityTrigger = document.querySelector("button[onclick*=modalityMenu]");
+    const regionTrigger = document.querySelector("button[onclick*=regionMenu]");
+    const sharedTrigger = document.querySelector("button[onclick*=sharedMenu]");
+
+    document.getElementById("modalityCount").textContent = modalities.length ? modalities.length : "Todas";
+    document.getElementById("regionCount").textContent = regions.length ? regions.length : "Todas";
+
+    if (!shared) document.getElementById("sharedCount").textContent = "Todas";
+    if (shared === "private") document.getElementById("sharedCount").textContent = "Privadas";
+    if (shared === "shared") document.getElementById("sharedCount").textContent = "Compartidas";
+
+    modalityTrigger?.classList.toggle("active-filter", modalities.length > 0);
+    regionTrigger?.classList.toggle("active-filter", regions.length > 0);
+    sharedTrigger?.classList.toggle("active-filter", !!shared);
+  }
+
+  function applyFilters() {
+    const modalities = checkedValues("modality");
+    const regions = checkedValues("region");
+    const shared = radioValue("shared_filter");
+    const text = document.getElementById("filterText").value.trim().toLowerCase();
+
+    document.querySelectorAll(".template-row").forEach(row => {
+      let visible = true;
+
+      if (modalities.length && !modalities.includes(row.dataset.modality || "")) visible = false;
+      if (regions.length && !regions.includes(row.dataset.region || "")) visible = false;
+      if (shared && row.dataset.shared !== shared) visible = false;
+      if (text && !(row.dataset.search || "").includes(text)) visible = false;
+
+      row.style.display = visible ? "" : "none";
+    });
+
+    updateFilterCounts();
+  }
+
+  function clearFilters() {
+    document.getElementById("filterText").value = "";
+    document.querySelector('input[name="shared_filter"][value=""]').checked = true;
+    document.querySelectorAll('input[data-filter="modality"], input[data-filter="region"]').forEach(x => x.checked = false);
+    applyFilters();
+  }
+
+  function visibleTemplateIds() {
+    return Array.from(document.querySelectorAll(".template-row"))
+      .filter(row => row.style.display !== "none")
+      .map(row => row.dataset.id);
+  }
+
+  function checkedTemplateIds() {
+    return Array.from(document.querySelectorAll(".template-check:checked")).map(x => x.value);
+  }
+
+  function openExportModal() {
+    const checked = checkedTemplateIds();
+    const ids = checked.length ? checked : visibleTemplateIds();
+    document.getElementById("exportSelectedIds").value = ids.join(",");
+    document.getElementById("exportModal").style.display = "flex";
+  }
+
+  function closeExportModal() {
+    document.getElementById("exportModal").style.display = "none";
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll('input[data-filter="modality"], input[data-filter="region"], input[name="shared_filter"]').forEach(el => {
+      el.addEventListener("change", applyFilters);
+    });
+
+    document.getElementById("filterText").addEventListener("input", applyFilters);
+
+    document.getElementById("selectAllTemplates").addEventListener("change", function () {
+      const checked = this.checked;
+      document.querySelectorAll(".template-row").forEach(row => {
+        if (row.style.display !== "none") {
+          const cb = row.querySelector(".template-check");
+          if (cb) cb.checked = checked;
+        }
+      });
+    });
+
+    updateFilterCounts();
+  });
+</script>
+
+{% endblock %}

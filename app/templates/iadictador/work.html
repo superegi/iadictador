@@ -1,6 +1,749 @@
 {% extends "iadictador/base.html" %}
 {% block title %}
   {% if ot %}OT #{{ ot.ot_user_number }}{% else %}Nueva OT{% endif %}
+
+<script>
+/* IAD_TEMPLATE_AUTOCOMPLETE_START */
+document.addEventListener("DOMContentLoaded", function () {
+  const search = document.getElementById("template_search");
+  const hiddenId = document.getElementById("template_id");
+  const hiddenModality = document.getElementById("modality");
+  const hint = document.getElementById("template_hint");
+
+  if (!search || !hiddenId) return;
+
+  function templateLabel(t) {
+    const modality = (t.radiology_use || t.modality || "").trim();
+    const name = (t.template_name || t.name || "").trim();
+    return modality ? (modality + " - " + name) : name;
+  }
+
+  function allTemplates() {
+    try {
+      if (Array.isArray(window.TEMPLATE_DATA)) return window.TEMPLATE_DATA;
+      if (typeof TEMPLATE_DATA !== "undefined" && Array.isArray(TEMPLATE_DATA)) return TEMPLATE_DATA;
+    } catch (e) {}
+    return [];
+  }
+
+  function syncTemplateFromText() {
+    const value = (search.value || "").trim().toLowerCase();
+    const templates = allTemplates();
+
+    const found = templates.find(function (t) {
+      return templateLabel(t).toLowerCase() === value;
+    });
+
+    if (found) {
+      hiddenId.value = found.id || "";
+      if (hiddenModality) hiddenModality.value = found.radiology_use || found.modality || "";
+
+      if (hint) {
+        hint.textContent = "Plantilla seleccionada: " + templateLabel(found);
+      }
+
+      if (typeof setTemplateWorkingText === "function") {
+        setTemplateWorkingText(found);
+      } else {
+        const target = document.getElementById("template_working_text");
+        if (target && found.text) target.value = found.text;
+      }
+    } else {
+      hiddenId.value = "";
+      if (hiddenModality) hiddenModality.value = "";
+      if (hint) hint.textContent = "Texto libre. Si coincide con una plantilla, se seleccionará automáticamente.";
+    }
+  }
+
+  search.addEventListener("input", syncTemplateFromText);
+  search.addEventListener("change", syncTemplateFromText);
+});
+/* IAD_TEMPLATE_AUTOCOMPLETE_END */
+</script>
+
+
+<style>
+/* IAD_TEMPLATE_SUGGESTIONS_START */
+.template-autocomplete-wrap {
+  position: relative;
+}
+.template-suggestions-box {
+  position: absolute;
+  top: calc(100% + .35rem);
+  left: 0;
+  right: 0;
+  z-index: 1500;
+  display: none;
+  max-height: 280px;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid var(--iad-border);
+  background: #0f1b2d;
+  box-shadow: 0 18px 45px rgba(0,0,0,.38);
+}
+.template-suggestion-item {
+  padding: .72rem .85rem;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  cursor: pointer;
+}
+.template-suggestion-item:last-child {
+  border-bottom: 0;
+}
+.template-suggestion-item:hover,
+.template-suggestion-item.active {
+  background: rgba(56,189,248,.12);
+}
+</style>
+
+<script>
+/* IAD_TEMPLATE_SUGGESTIONS_JS_START */
+document.addEventListener("DOMContentLoaded", function () {
+  const input = document.getElementById("template_search");
+  const hiddenId = document.getElementById("template_id");
+  const hiddenModality = document.getElementById("modality");
+  const box = document.getElementById("template_suggestions_box");
+  const hint = document.getElementById("template_hint");
+  const workText = document.getElementById("template_working_text");
+
+  if (!input || !box) return;
+
+  function norm(s) {
+    return (s || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  function allTemplates() {
+    try {
+      if (Array.isArray(window.TEMPLATE_DATA)) return window.TEMPLATE_DATA;
+      if (typeof TEMPLATE_DATA !== "undefined" && Array.isArray(TEMPLATE_DATA)) return TEMPLATE_DATA;
+    } catch (e) {}
+    return [];
+  }
+
+  function labelOf(t) {
+    const mod = (t.radiology_use || t.modality || "").trim();
+    const name = (t.template_name || t.name || "").trim();
+    return mod ? (mod + " - " + name) : name;
+  }
+
+  function haystackOf(t) {
+    return [
+      labelOf(t),
+      t.template_name || "",
+      t.title || "",
+      t.tags || "",
+      t.body_region || ""
+    ].join(" ");
+  }
+
+  function tokenMatch(query, candidate) {
+    const q = norm(query);
+    const c = norm(candidate);
+
+    if (!q) return false;
+    if (c.includes(q)) return true;
+
+    const qTokens = q.split(/\s+/).filter(Boolean);
+    const cTokens = c.split(/\s+/).filter(Boolean);
+
+    if (!qTokens.length) return false;
+
+    // Ejemplo: "pelvi fem" encuentra "Pélvica Femenina".
+    return qTokens.every(function (qt) {
+      return cTokens.some(function (ct) {
+        return ct.startsWith(qt) || ct.includes(qt) || qt.startsWith(ct);
+      });
+    });
+  }
+
+  function templateScore(query, t) {
+    const q = norm(query);
+    const label = norm(labelOf(t));
+    const hay = norm(haystackOf(t));
+
+    if (label === q) return 0;
+    if (label.includes(q)) return 1;
+    if (hay.includes(q)) return 2;
+    if (tokenMatch(q, label)) return 3;
+    if (tokenMatch(q, hay)) return 4;
+    return 99;
+  }
+
+  function renderSuggestions(list) {
+    box.innerHTML = "";
+
+    if (!list.length) {
+      box.style.display = "none";
+      return;
+    }
+
+    list.slice(0, 12).forEach(function (t) {
+      const div = document.createElement("div");
+      div.className = "template-suggestion-item";
+      div.textContent = labelOf(t);
+      div.addEventListener("click", function () {
+        selectTemplate(t, "Plantilla seleccionada desde sugerencias.");
+      });
+      box.appendChild(div);
+    });
+
+    box.style.display = "block";
+  }
+
+  function selectTemplate(t, message) {
+    input.value = labelOf(t);
+
+    if (hiddenId) hiddenId.value = t.id || "";
+    if (hiddenModality) hiddenModality.value = t.radiology_use || t.modality || "";
+
+    box.style.display = "none";
+
+    if (hint) {
+      hint.innerHTML = '<span class="ai-badge">Producto de IA</span> ' + message;
+    }
+
+    if (typeof setTemplateWorkingText === "function") {
+      setTemplateWorkingText(t);
+    } else if (workText && t.text) {
+      workText.value = t.text;
+    }
+  }
+
+  function searchTemplates() {
+    const q = input.value || "";
+    const list = allTemplates();
+
+    if (!q.trim()) {
+      if (hiddenId) hiddenId.value = "";
+      if (hiddenModality) hiddenModality.value = "";
+      if (hint) hint.textContent = "Texto libre. Si coincide con una plantilla, se seleccionará automáticamente.";
+      box.style.display = "none";
+      return;
+    }
+
+    const matches = list
+      .filter(function (t) {
+        return templateScore(q, t) < 99;
+      })
+      .sort(function (a, b) {
+        const sa = templateScore(q, a);
+        const sb = templateScore(q, b);
+        if (sa !== sb) return sa - sb;
+        return labelOf(a).localeCompare(labelOf(b));
+      });
+
+    const exact = matches.find(function (t) {
+      return norm(labelOf(t)) === norm(q);
+    });
+
+    if (exact) {
+      selectTemplate(exact, "Coincidencia exacta encontrada automáticamente.");
+      return;
+    }
+
+    if (hiddenId) hiddenId.value = "";
+    if (hiddenModality) hiddenModality.value = "";
+
+    if (hint) {
+      hint.textContent = matches.length
+        ? "Sugerencias encontradas. Selecciona una plantilla."
+        : "Texto libre. No hay coincidencia de plantilla.";
+    }
+
+    renderSuggestions(matches);
+  }
+
+  input.addEventListener("input", searchTemplates);
+  input.addEventListener("focus", searchTemplates);
+
+  document.addEventListener("click", function (ev) {
+    if (!ev.target.closest(".template-autocomplete-wrap")) {
+      box.style.display = "none";
+    }
+  });
+});
+/* IAD_TEMPLATE_SUGGESTIONS_JS_END */
+</script>
+
+
+<style>
+/* IAD_TEMPLATE_SUGGESTIONS_STYLE_START */
+.template-autocomplete-wrap {
+  position: relative;
+}
+
+.template-suggestions-box {
+  position: absolute;
+  top: calc(100% + .35rem);
+  left: 0;
+  right: 0;
+  z-index: 1500;
+  display: none;
+  max-height: 280px;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid var(--iad-border);
+  background: #0f1b2d;
+  box-shadow: 0 18px 45px rgba(0,0,0,.38);
+}
+
+.template-suggestion-item {
+  padding: .72rem .85rem;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  cursor: pointer;
+}
+
+.template-suggestion-item:last-child {
+  border-bottom: 0;
+}
+
+.template-suggestion-item:hover {
+  background: rgba(56,189,248,.12);
+}
+/* IAD_TEMPLATE_SUGGESTIONS_STYLE_END */
+</style>
+
+
+<style>
+/* IAD_AUDIO_MULTI_STYLE_START */
+.audio-panel {
+  border: 1px solid var(--iad-border);
+  border-radius: 14px;
+  padding: .8rem;
+  background: rgba(255,255,255,.025);
+  margin-bottom: .85rem;
+}
+
+.audio-actions {
+  display: flex;
+  gap: .55rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: .65rem;
+}
+
+.recording-indicator {
+  color: #fecaca;
+  font-weight: 800;
+  animation: blinkRec 1s infinite;
+}
+
+@keyframes blinkRec {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+
+.audio-file-list {
+  display: grid;
+  gap: .55rem;
+  margin-top: .75rem;
+}
+
+.audio-file-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .55rem;
+  align-items: center;
+  padding: .65rem;
+  border-radius: 12px;
+  border: 1px solid var(--iad-border);
+  background: rgba(255,255,255,.035);
+}
+
+.audio-file-meta {
+  font-size: .86rem;
+  color: var(--iad-muted);
+  margin-bottom: .35rem;
+}
+
+.audio-file-card audio {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .audio-file-card {
+    grid-template-columns: 1fr;
+  }
+
+  .audio-actions button {
+    flex: 1 1 100%;
+  }
+}
+/* IAD_AUDIO_MULTI_STYLE_END */
+</style>
+
+<script>
+/* IAD_AUDIO_MULTI_JS_START */
+document.addEventListener("DOMContentLoaded", function () {
+  const picker = document.getElementById("audio_files_picker");
+  const hiddenInput = document.getElementById("audio_files_input");
+  const durationsInput = document.getElementById("audio_durations_json");
+  const list = document.getElementById("audio_file_list");
+  const startBtn = document.getElementById("recordStartBtn");
+  const stopBtn = document.getElementById("recordStopBtn");
+  const indicator = document.getElementById("recordingIndicator");
+  const timer = document.getElementById("recordingTimer");
+
+  if (!hiddenInput || !list) return;
+
+  let files = [];
+  let durations = [];
+  let recorder = null;
+  let stream = null;
+  let chunks = [];
+  let recordingActive = false;
+  let segmentStart = null;
+  let globalStart = null;
+  let segmentTimer = null;
+  let tickTimer = null;
+
+  function pad(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function durationText(sec) {
+    sec = Math.max(0, Math.round(sec || 0));
+    return pad(Math.floor(sec / 60)) + ":" + pad(sec % 60);
+  }
+
+  function nowText() {
+    const d = new Date();
+    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  }
+
+  function refreshInput() {
+    const dt = new DataTransfer();
+    files.forEach(function (f) { dt.items.add(f); });
+    hiddenInput.files = dt.files;
+    durationsInput.value = JSON.stringify(durations);
+  }
+
+  function renderFiles() {
+    list.innerHTML = "";
+
+    files.forEach(function (file, idx) {
+      const card = document.createElement("div");
+      card.className = "audio-file-card";
+
+      const left = document.createElement("div");
+      const meta = document.createElement("div");
+      meta.className = "audio-file-meta";
+      meta.textContent = file.name + " · " + durationText(durations[idx] || 0);
+
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = URL.createObjectURL(file);
+
+      left.appendChild(meta);
+      left.appendChild(audio);
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "danger-button";
+      del.textContent = "Eliminar";
+      del.addEventListener("click", function () {
+        files.splice(idx, 1);
+        durations.splice(idx, 1);
+        refreshInput();
+        renderFiles();
+      });
+
+      card.appendChild(left);
+      card.appendChild(del);
+      list.appendChild(card);
+    });
+
+    refreshInput();
+  }
+
+  function addAudioFile(blobOrFile, durationSec, originalName) {
+    const seq = files.length + 1;
+    const ext = originalName && originalName.includes(".")
+      ? "." + originalName.split(".").pop()
+      : ".webm";
+
+    const name = "OT#nuevo Grabacion" + seq + " " + nowText() + " - " + durationText(durationSec) + ext;
+    const file = blobOrFile instanceof File
+      ? new File([blobOrFile], name, { type: blobOrFile.type || "audio/webm" })
+      : new File([blobOrFile], name, { type: blobOrFile.type || "audio/webm" });
+
+    files.push(file);
+    durations.push(Math.round(durationSec || 0));
+    renderFiles();
+  }
+
+  async function startRecordingSession() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("El navegador no permite grabación de audio.");
+      return;
+    }
+
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordingActive = true;
+    globalStart = Date.now();
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    indicator.style.display = "inline-flex";
+
+    tickTimer = setInterval(function () {
+      const elapsed = Math.floor((Date.now() - globalStart) / 1000);
+      timer.textContent = durationText(elapsed);
+    }, 300);
+
+    startSegment();
+  }
+
+  function startSegment() {
+    chunks = [];
+    segmentStart = Date.now();
+
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = function (ev) {
+      if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+    };
+
+    recorder.onstop = function () {
+      const durationSec = Math.min(60, Math.round((Date.now() - segmentStart) / 1000));
+      if (chunks.length) {
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        addAudioFile(blob, durationSec, "grabacion.webm");
+      }
+
+      if (recordingActive) {
+        startSegment();
+      }
+    };
+
+    recorder.start();
+
+    clearTimeout(segmentTimer);
+    segmentTimer = setTimeout(function () {
+      if (recorder && recorder.state === "recording") {
+        recorder.stop();
+      }
+    }, 60000);
+  }
+
+  function stopRecordingSession() {
+    recordingActive = false;
+
+    clearTimeout(segmentTimer);
+    clearInterval(tickTimer);
+
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    indicator.style.display = "none";
+    timer.textContent = "00:00";
+
+    if (recorder && recorder.state === "recording") {
+      recorder.stop();
+    }
+
+    if (stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+  }
+
+  if (startBtn) startBtn.addEventListener("click", startRecordingSession);
+  if (stopBtn) stopBtn.addEventListener("click", stopRecordingSession);
+
+  if (picker) {
+    picker.addEventListener("change", function () {
+      Array.from(picker.files || []).forEach(function (file) {
+        const url = URL.createObjectURL(file);
+        const audio = document.createElement("audio");
+        audio.preload = "metadata";
+        audio.onloadedmetadata = function () {
+          const dur = isFinite(audio.duration) ? audio.duration : 0;
+          addAudioFile(file, dur, file.name);
+          URL.revokeObjectURL(url);
+        };
+        audio.onerror = function () {
+          addAudioFile(file, 0, file.name);
+          URL.revokeObjectURL(url);
+        };
+        audio.src = url;
+      });
+      picker.value = "";
+    });
+  }
+});
+/* IAD_AUDIO_MULTI_JS_END */
+</script>
+
+
+<script>
+/* IAD_REMOVE_LEGACY_AUDIO_START */
+document.addEventListener("DOMContentLoaded", function () {
+  document.querySelectorAll("div, section, article").forEach(function (el) {
+    const text = (el.textContent || "");
+    if (
+      text.includes("PC: click para grabar") &&
+      text.includes("Finalizar audio") &&
+      !text.includes("Cada grabación se corta automáticamente")
+    ) {
+      let target = el;
+      for (let i = 0; i < 3; i++) {
+        if (target.parentElement && !target.parentElement.matches("body")) {
+          target = target.parentElement;
+        }
+      }
+      el.remove();
+    }
+  });
+});
+/* IAD_REMOVE_LEGACY_AUDIO_END */
+</script>
+
+
+<style>
+/* IAD_AUDIO_TRANSCRIPTION_PATCH_START */
+.audio-transcription-status {
+  margin-top: .55rem;
+  min-height: 1.2em;
+}
+
+.audio-file-actions {
+  display: flex;
+  gap: .45rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.audio-file-actions button {
+  padding: .45rem .7rem;
+}
+
+@media (max-width: 760px) {
+  .audio-file-actions button {
+    flex: 1 1 100%;
+  }
+}
+/* IAD_AUDIO_TRANSCRIPTION_PATCH_END */
+</style>
+
+<script>
+/* IAD_AUDIO_TRANSCRIPTION_PATCH_JS_START */
+document.addEventListener("DOMContentLoaded", function () {
+  const status = document.getElementById("audio_transcription_status");
+  const transcribeAllBtn = document.getElementById("transcribeAllBtn");
+  const mainText = document.querySelector('textarea[name="input_text_final"], #input_text_final');
+
+  function setStatus(msg) {
+    if (status) status.textContent = msg || "";
+  }
+
+  function appendToMainText(text) {
+    if (!mainText || !text) return;
+
+    const current = (mainText.value || "").trim();
+    mainText.value = current ? (current + "\n\n" + text.trim()) : text.trim();
+    mainText.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  async function transcribeFile(file, idx) {
+    if (!file) return;
+
+    setStatus("Transcribiendo audio " + (idx + 1) + "...");
+
+    const fd = new FormData();
+    fd.append("audio_file", file, file.name || ("audio_" + (idx + 1) + ".webm"));
+
+    const resp = await fetch("/iad/audio/transcribir", {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+    });
+
+    let data = null;
+    try {
+      data = await resp.json();
+    } catch (e) {
+      data = { ok: false, detail: "Respuesta no JSON del servidor." };
+    }
+
+    if (!resp.ok || !data.ok) {
+      const detail = data && data.detail ? data.detail : ("HTTP " + resp.status);
+      setStatus("Error transcribiendo audio " + (idx + 1) + ": " + detail);
+      throw new Error(detail);
+    }
+
+    appendToMainText(data.text || "");
+    setStatus("Audio " + (idx + 1) + " transcrito.");
+  }
+
+  function currentAudioFiles() {
+    const input = document.getElementById("audio_files_input");
+    if (!input) return [];
+    return Array.from(input.files || []);
+  }
+
+  async function transcribeAll() {
+    const files = currentAudioFiles();
+
+    if (!files.length) {
+      setStatus("No hay audios para transcribir.");
+      return;
+    }
+
+    for (let i = 0; i < files.length; i++) {
+      await transcribeFile(files[i], i);
+    }
+
+    setStatus("Transcripción completa: " + files.length + " audio(s).");
+  }
+
+  if (transcribeAllBtn) {
+    transcribeAllBtn.addEventListener("click", function () {
+      transcribeAll().catch(function (err) {
+        console.error(err);
+      });
+    });
+  }
+
+  // Inyectar botón Transcribir en cada tarjeta renderizada.
+  const list = document.getElementById("audio_file_list");
+  if (list) {
+    const observer = new MutationObserver(function () {
+      const files = currentAudioFiles();
+
+      list.querySelectorAll(".audio-file-card").forEach(function (card, idx) {
+        if (card.querySelector(".transcribe-one-btn")) return;
+
+        const actions = document.createElement("div");
+        actions.className = "audio-file-actions";
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "ai-button transcribe-one-btn";
+        btn.textContent = "Transcribir";
+
+        btn.addEventListener("click", function () {
+          const latestFiles = currentAudioFiles();
+          transcribeFile(latestFiles[idx], idx).catch(function (err) {
+            console.error(err);
+          });
+        });
+
+        actions.appendChild(btn);
+
+        // dejar los botones existentes, pero agregar transcribir al final
+        card.appendChild(actions);
+      });
+    });
+
+    observer.observe(list, { childList: true, subtree: true });
+  }
+});
+/* IAD_AUDIO_TRANSCRIPTION_PATCH_JS_END */
+</script>
+
 {% endblock %}
 
 {% block content %}
@@ -13,45 +756,49 @@
   <div class="panel">
     <h3>Ingreso</h3>
     <p class="muted">
-      Si quiere solo procesar texto, ingrese información y haga click en “Procesar”.
-      Si quiere agregar información adicional, complete la segunda sección y use “Procesar con datos extra”.
+      Ingrese información principal para el informe. Puede grabar audio principal, subir archivo de audio o pegar texto.
     </p>
 
-    <div class="grid-2">
-      <div class="audio-box">
-        <h4>Audio principal</h4>
-        <p class="muted">PC: click para grabar. Celular: tap para grabar. También puede subir archivo de audio.</p>
-        <input id="audio_file" name="audio_file" type="file" accept="audio/*">
-        <br><br>
-        <div class="top-actions">
-          <button type="button" class="secondary" id="audio_start">Grabar</button>
-          <button type="button" class="secondary" id="audio_stop" disabled>Finalizar audio</button>
-        </div>
-        <p class="muted" id="audio_status"></p>
+    <div class="audio-box">
+      <h4>Audio principal</h4>
+      <p class="muted">PC: click para grabar. Celular: tap para grabar. También puede subir archivo de audio.</p>
+      <input id="audio_file" name="audio_file" type="file" accept="audio/*" style="display:none;" disabled style="display:none;" disabled>
+      <br><br>
+      <div class="top-actions">
+        <button type="button" class="secondary" id="audio_start">Grabar</button>
+        <button type="button" class="secondary" id="audio_stop" disabled>Finalizar audio</button>
       </div>
-
-      <div class="audio-box">
-        <h4>Audio de aclaración</h4>
-        <p class="muted">Opcional. Se guarda como segundo audio asociado a la OT.</p>
-        <input id="clarification_audio_file" name="clarification_audio_file" type="file" accept="audio/*">
-        <br><br>
-        <div class="top-actions">
-          <button type="button" class="secondary" id="clar_start">Grabar aclaración</button>
-          <button type="button" class="secondary" id="clar_stop" disabled>Finalizar aclaración</button>
-        </div>
-        <p class="muted" id="clar_status"></p>
-      </div>
+      <p class="muted" id="audio_status"></p>
     </div>
 
     <br>
 
-    <label>1) Información principal para el informe</label>
+    <label>
+<!-- IAD_AUDIO_MULTI_UI_START -->
+<div class="audio-panel">
+  <label>Audio principal</label>
+  <p class="muted">Puedes grabar o subir varios audios. Cada grabación se corta automáticamente al minuto y continúa como otro archivo.</p>
+
+  <input type="file" id="audio_files_picker" accept="audio/*" multiple>
+
+  <input type="file" id="audio_files_input" name="audio_files" multiple style="display:none;">
+  <input type="hidden" id="audio_durations_json" name="audio_durations_json" value="[]">
+
+  <div class="audio-actions">
+    <button type="button" id="recordStartBtn">Grabar</button>
+    <button type="button" id="recordStopBtn" class="back-button" disabled>Detener</button>
+    <span id="recordingIndicator" class="recording-indicator" style="display:none;">● Grabando</span>
+    <span id="recordingTimer" class="muted">00:00</span>
+    <button type="button" id="transcribeAllBtn" class="ai-button">Transcribir todos</button>
+  </div>
+
+  <div id="audio_file_list" class="audio-file-list"></div>
+  <div id="audio_transcription_status" class="audio-transcription-status muted"></div>
+</div>
+<!-- IAD_AUDIO_MULTI_UI_END -->
+
+1) Información principal para el informe</label>
     <textarea name="input_text_final" placeholder="Ingrese o pegue aquí la información principal. La transcripción de audio quedará aquí cuando se conecte el motor de transcripción."></textarea>
-
-    <br><br>
-
-    <label>Aclaración textual opcional</label>
-    <textarea name="clarification_text" placeholder="Ingrese aquí una aclaración adicional si corresponde."></textarea>
 
     <br><br>
     <button type="submit">Procesar</button>
@@ -59,75 +806,31 @@
 
   <div class="panel">
     <h3>2) Información extra</h3>
-    <p class="muted">Opcional. Si se completa, se guarda junto a la OT y se usará para procesar con contexto.</p>
+    <p class="muted">Opcional. Se guarda junto a la OT y se usará para procesar con contexto.</p>
 
     <div class="grid-3">
       <div>
-        <label>Lugar de trabajo</label>
-        <select name="workplace_id">
-          <option value="">Sin especificar</option>
-          {% for w in workplaces %}
-          <option value="{{ w.id }}">{{ w.name }}</option>
-          {% endfor %}
-        </select>
+        
+<label>Plantilla</label>
+<input type="hidden" name="template_id" id="template_id">
+<input type="hidden" name="modality" id="modality">
+
+<div class="template-autocomplete-wrap">
+  <input id="template_search" name="template_search" list="template_suggestions" autocomplete="off" placeholder="Escriba para buscar plantilla">
+  <div id="template_suggestions_box" class="template-suggestions-box"></div>
+</div>
+
+<datalist id="template_suggestions">
+  {% for t in templates %}
+    <option value="{{ t.radiology_use }} - {{ t.template_name }}"></option>
+  {% endfor %}
+</datalist>
+<p class="muted" id="template_hint">Formato: Modalidad - Nombre plantilla.</p>
+
       </div>
 
-      <div>
-        <label>Plantilla</label>
-        <select name="template_id">
-          <option value="">Sin plantilla</option>
-          {% for t in templates %}
-          <option value="{{ t.id }}">{{ t.radiology_use }} · {{ t.template_name }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      
 
-      <div>
-        <label>Modalidad</label>
-        <select name="modality">
-          <option value="">Sin especificar</option>
-          <option value="TC">TC</option>
-          <option value="MR">MR</option>
-          <option value="US">US</option>
-          <option value="RX">RX</option>
-          <option value="XA">XA</option>
-        </select>
-      </div>
-    </div>
-
-    <br>
-
-    <div class="grid-3">
-      <div>
-        <label>Nombre paciente</label>
-        <input name="patient_first_name">
-      </div>
-      <div>
-        <label>Apellido paciente</label>
-        <input name="patient_last_name">
-      </div>
-      <div>
-        <label>Sexo</label>
-        <select name="patient_sex">
-          <option value="">Sin especificar</option>
-          <option value="F">F</option>
-          <option value="M">M</option>
-          <option value="Otro">Otro</option>
-        </select>
-      </div>
-    </div>
-
-    <br>
-
-    <div class="grid-3">
-      <div>
-        <label>Fecha nacimiento</label>
-        <input name="patient_birthdate" placeholder="AAAA-MM-DD">
-      </div>
-      <div>
-        <label>Edad</label>
-        <input name="patient_age">
-      </div>
       <div>
         <label>Tipo de informe</label>
         <select name="report_type">
@@ -140,18 +843,78 @@
       </div>
     </div>
 
-    <br>
+    <div class="template-work-panel">
+      <div class="template-work-head">
+        <div>
+          <h4>Plantilla de trabajo</h4>
+          <p class="muted">Se carga desde la plantilla seleccionada. Puede editarla antes de procesar.</p>
+        </div>
+        <div class="top-actions">
+          <button type="button" class="secondary" id="template_reload">Recargar plantilla</button>
+          <button type="button" class="secondary" id="template_clear">Limpiar</button>
+        </div>
+      </div>
 
-    <div class="grid-2">
-      <div>
-        <label>Hospital, clínica o servicio</label>
-        <input name="hospital_service">
+      <textarea
+        name="template_working_text"
+        id="template_working_text"
+        placeholder="Seleccione una plantilla o escriba aquí el molde del informe. Esta plantilla se usará como base de trabajo."></textarea>
+</div>
+
+    <details class="fold-panel" id="fold_institucion">
+      <summary>Lugar / institución</summary>
+      <div class="grid-2 fold-body">
+        <div>
+          <label>Lugar de trabajo</label>
+          <select name="workplace_id">
+            <option value="">Sin especificar</option>
+            {% for w in workplaces %}
+            <option value="{{ w.id }}">{{ w.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label>Hospital / clínica / servicio</label>
+          <input name="hospital_service">
+        </div>
       </div>
-      <div>
-        <label>Título informe</label>
-        <input name="report_title">
+    </details>
+
+    <details class="fold-panel" id="fold_paciente">
+      <summary>Datos del paciente</summary>
+      <div class="grid-3 fold-body">
+        <div>
+          <label>Nombre y apellido</label>
+          <input name="patient_first_name">
+          <input type="hidden" name="patient_last_name" value="">
+        </div>
+
+        <div>
+          <label>Sexo</label>
+          <select name="patient_sex">
+            <option value="">Sin especificar</option>
+            <option value="F">F</option>
+            <option value="M">M</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Fecha nacimiento</label>
+          <input name="patient_birthdate" id="patient_birthdate" placeholder="AAAA-MM-DD">
+        </div>
       </div>
-    </div>
+
+      <br>
+
+      <div class="grid-3">
+        <div>
+          <label>Edad</label>
+          <input name="patient_age" id="patient_age">
+        </div>
+      </div>
+    </details>
 
     <br>
     <button type="submit">Procesar con datos extra</button>
@@ -218,10 +981,58 @@
 
 {% endif %}
 
+<style>
+  .fold-panel,
+  .template-work-panel {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: rgba(255,255,255,.025);
+  }
+
+  .fold-panel summary {
+    cursor: pointer;
+    font-weight: 750;
+    color: var(--text);
+  }
+
+  .fold-body {
+    margin-top: 1rem;
+  }
+
+  .template-work-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: .8rem;
+  }
+
+  .template-work-head h4 {
+    margin: 0 0 .25rem 0;
+  }
+
+  #template_working_text {
+    min-height: 320px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  }
+
+  @media (max-width: 900px) {
+    .template-work-head {
+      flex-direction: column;
+    }
+  }
+</style>
+
 <script>
+  const TEMPLATE_DATA = {{ templates_json | safe if templates_json else "[]" }};
+
   try {
-    document.getElementById("timezone").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-    document.getElementById("utc_offset_minutes").value = String(-new Date().getTimezoneOffset());
+    const tz = document.getElementById("timezone");
+    const off = document.getElementById("utc_offset_minutes");
+    if (tz) tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (off) off.value = String(-new Date().getTimezoneOffset());
   } catch (e) {}
 
   function setupRecorder(prefix, inputId) {
@@ -274,8 +1085,150 @@
     });
   }
 
+  function hasMeaningfulValue(el) {
+    if (!el) return false;
+    const value = String(el.value || "").trim();
+    if (!value) return false;
+    if (["sin especificar", "sin plantilla"].includes(value.toLowerCase())) return false;
+    return true;
+  }
+
+  function setupFoldAutoOpen(detailsId) {
+    const box = document.getElementById(detailsId);
+    if (!box) return;
+
+    const controls = Array.from(box.querySelectorAll("input, select, textarea"));
+
+    function refresh() {
+      if (controls.some(hasMeaningfulValue)) {
+        box.open = true;
+      }
+    }
+
+    controls.forEach(el => {
+      el.addEventListener("input", refresh);
+      el.addEventListener("change", refresh);
+    });
+
+    refresh();
+  }
+
+  function setupAgeFromBirthdate() {
+    const birth = document.getElementById("patient_birthdate");
+    const age = document.getElementById("patient_age");
+    if (!birth || !age) return;
+
+    function parseDate(s) {
+      s = String(s || "").trim();
+
+      let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+      m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+
+      m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+      if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+
+      return null;
+    }
+
+    function calcAge(d) {
+      if (!d || isNaN(d.getTime())) return "";
+      const today = new Date();
+      let years = today.getFullYear() - d.getFullYear();
+      const m = today.getMonth() - d.getMonth();
+
+      if (m < 0 || (m === 0 && today.getDate() < d.getDate())) years -= 1;
+      if (years < 0 || years > 130) return "";
+
+      return String(years);
+    }
+
+    function update() {
+      const calculated = calcAge(parseDate(birth.value));
+      if (!calculated) return;
+
+      if (!age.value || age.dataset.autoAge === "1") {
+        age.value = calculated;
+        age.dataset.autoAge = "1";
+      }
+    }
+
+    birth.addEventListener("input", update);
+    birth.addEventListener("change", update);
+    age.addEventListener("input", () => {
+      age.dataset.autoAge = "0";
+    });
+
+    update();
+  }
+
+  function setupTemplateWork() {
+    const select = document.getElementById("template_id");
+    const textarea = document.getElementById("template_working_text");
+    const reload = document.getElementById("template_reload");
+    const clear = document.getElementById("template_clear");
+    const previewFold = document.getElementById("template_preview_fold");
+    const previewName = document.getElementById("template_preview_name");
+    const previewUse = document.getElementById("template_preview_use");
+    const previewRules = document.getElementById("template_preview_rules");
+
+    if (!select || !textarea) return;
+
+    let manuallyEdited = false;
+
+    function selectedTemplate() {
+      return TEMPLATE_DATA.find(t => String(t.id) === String(select.value)) || null;
+    }
+
+    function loadTemplate(force) {
+      const t = selectedTemplate();
+
+      if (!t) {
+        if (force) textarea.value = "";
+        if (previewName) previewName.value = "";
+        if (previewUse) previewUse.value = "";
+        if (previewRules) previewRules.value = "";
+        return;
+      }
+
+      if (force || !textarea.value.trim() || !manuallyEdited) {
+        textarea.value = t.template_text || "";
+        manuallyEdited = false;
+      }
+
+      if (previewName) previewName.value = t.template_name || "";
+      if (previewUse) previewUse.value = t.radiology_use || "";
+      if (previewRules) previewRules.value = t.specific_rules_json || "";
+      if (previewFold) previewFold.open = true;
+    }
+
+    select.addEventListener("change", () => loadTemplate(false));
+
+    textarea.addEventListener("input", () => {
+      manuallyEdited = true;
+    });
+
+    if (reload) {
+      reload.addEventListener("click", () => loadTemplate(true));
+    }
+
+    if (clear) {
+      clear.addEventListener("click", () => {
+        textarea.value = "";
+        manuallyEdited = false;
+      });
+    }
+
+    loadTemplate(false);
+  }
+
   setupRecorder("audio", "audio_file");
-  setupRecorder("clar", "clarification_audio_file");
+  setupFoldAutoOpen("fold_institucion");
+  setupFoldAutoOpen("fold_paciente");
+  setupAgeFromBirthdate();
+  setupTemplateWork();
 </script>
 
 {% endblock %}

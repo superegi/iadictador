@@ -1,122 +1,190 @@
 import os
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
-from app.services.rule_interpreter import interpret_rules
-from app.services.template_engine import build_report, load_template
+from app.iadictador.router import router as iadictador_router
+from app.iadictador.router import init_iadictador
+from app.iadictador.models import Workplace
+from app.iadictador.db import engine
+from sqlalchemy import inspect, text
+
+
+
+def ensure_iad_template_schema():
+    inspector = inspect(engine)
+    if "iad_report_templates" not in inspector.get_table_names():
+        return
+
+    cols = {c["name"] for c in inspector.get_columns("iad_report_templates")}
+
+    with engine.begin() as conn:
+        dialect = engine.dialect.name
+
+        if "body_region" not in cols:
+            conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN body_region VARCHAR"))
+
+        if "is_shared" not in cols:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN is_shared BOOLEAN DEFAULT false"))
+            else:
+                conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN is_shared BOOLEAN DEFAULT 0"))
+
+        # Migración semántica: is_global viejo pasa a is_shared, pero cada plantilla mantiene dueño.
+        try:
+            if dialect == "postgresql":
+                conn.execute(text("UPDATE iad_report_templates SET is_shared = true WHERE is_global = true AND is_shared = false"))
+            else:
+                conn.execute(text("UPDATE iad_report_templates SET is_shared = 1 WHERE is_global = 1 AND is_shared = 0"))
+        except Exception:
+            pass
+
+
+
+
+
+
+
+# IAD_TEMPLATE_SCHEMA_HELPER_START
+def ensure_iad_template_schema():
+    inspector = inspect(engine)
+    if "iad_report_templates" not in inspector.get_table_names():
+        return
+
+    cols = {c["name"] for c in inspector.get_columns("iad_report_templates")}
+
+    with engine.begin() as conn:
+        dialect = engine.dialect.name
+
+        if "body_region" not in cols:
+            conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN body_region VARCHAR"))
+            cols.add("body_region")
+
+        if "is_shared" not in cols:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN is_shared BOOLEAN DEFAULT false"))
+            else:
+                conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN is_shared BOOLEAN DEFAULT 0"))
+            cols.add("is_shared")
+
+        if "imported_at" not in cols:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN imported_at TIMESTAMP"))
+            else:
+                conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN imported_at DATETIME"))
+            cols.add("imported_at")
+
+        if "import_source" not in cols:
+            conn.execute(text("ALTER TABLE iad_report_templates ADD COLUMN import_source VARCHAR"))
+            cols.add("import_source")
+
+        try:
+            if "is_global" in cols and "is_shared" in cols:
+                if dialect == "postgresql":
+                    conn.execute(text("UPDATE iad_report_templates SET is_shared = true WHERE is_global = true AND is_shared = false"))
+                else:
+                    conn.execute(text("UPDATE iad_report_templates SET is_shared = 1 WHERE is_global = 1 AND is_shared = 0"))
+        except Exception:
+            pass
+
+        for col in [
+            "title",
+            "technique",
+            "background",
+            "findings",
+            "impression",
+            "specific_rules_json",
+            "tags",
+            "body_region",
+            "import_source",
+        ]:
+            if col in cols:
+                try:
+                    conn.execute(text(f"UPDATE iad_report_templates SET {col} = NULL WHERE lower(trim(CAST({col} AS TEXT))) = 'none'"))
+                except Exception:
+                    pass
+
+        if "imported_at" in cols:
+            try:
+                conn.execute(text("UPDATE iad_report_templates SET imported_at = CURRENT_TIMESTAMP WHERE imported_at IS NULL"))
+            except Exception:
+                pass
+
+        if "import_source" in cols:
+            try:
+                conn.execute(text("UPDATE iad_report_templates SET import_source = 'manual' WHERE import_source IS NULL OR trim(import_source) = ''"))
+            except Exception:
+                pass
+# IAD_TEMPLATE_SCHEMA_HELPER_END
+
+
+
+# IAD_WORKPLACE_SCHEMA_HELPER_START
+def ensure_iad_workplace_schema():
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+
+    try:
+        table = Workplace.__tablename__
+    except Exception:
+        table = "iad_workplaces"
+
+    if table not in tables:
+        return
+
+    cols = {c["name"] for c in inspector.get_columns(table)}
+
+    with engine.begin() as conn:
+        if "tariffs_json" not in cols:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN tariffs_json TEXT"))
+            cols.add("tariffs_json")
+
+        # Limpieza defensiva de valores literales None.
+        if "tariffs_json" in cols:
+            try:
+                conn.execute(text(f"UPDATE {table} SET tariffs_json = NULL WHERE lower(trim(CAST(tariffs_json AS TEXT))) = 'none'"))
+            except Exception:
+                pass
+# IAD_WORKPLACE_SCHEMA_HELPER_END
 
 
 app = FastAPI(title="IA Dictador")
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
 
 
-def interpret_dictation(dictado_bruto: str, template: dict):
-    provider = os.getenv("AI_PROVIDER", "rules").strip().lower()
+_session_secret = (
+    os.getenv("IADICTADOR_SESSION_SECRET")
+    or os.getenv("SESSION_SECRET")
+    or os.getenv("ANGIOPACS_SESSION_SECRET")
+    or "iadictador_dev_secret_change_me"
+)
 
-    if not dictado_bruto.strip():
-        return {
-            "dictado_normalizado": "",
-            "actions": [],
-            "global_warnings": [],
-            "provider": provider,
-        }
-
-    if provider in ["gpt", "openai"]:
-        try:
-            from app.services.gpt_interpreter import interpret_gpt
-            return interpret_gpt(dictado_bruto, template)
-        except Exception as exc:
-            fallback = interpret_rules(dictado_bruto)
-            fallback.setdefault("global_warnings", [])
-            fallback["global_warnings"].insert(
-                0,
-                f"GPT falló y se usaron reglas locales como fallback: {exc}"
-            )
-            fallback["provider"] = "rules_fallback"
-            return fallback
-
-    result = interpret_rules(dictado_bruto)
-    result["provider"] = "rules"
-    return result
+app.add_middleware(SessionMiddleware, secret_key=_session_secret)
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    template = load_template("tc_tap_cc")
-    result = build_report(template)
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "dictado_bruto": "",
-            "result": result,
-            "actions": [],
-            "processed": False,
-            "provider": os.getenv("AI_PROVIDER", "rules"),
-        },
-    )
+@app.get("/")
+async def root():
+    return RedirectResponse("/iad/trabajo", status_code=303)
 
 
-@app.post("/process", response_class=HTMLResponse)
-async def process(request: Request, dictado_bruto: str = Form("")):
-    template = load_template("tc_tap_cc")
-    interpretation = interpret_dictation(dictado_bruto, template)
-    result = build_report(template, interpretation)
-
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "dictado_bruto": dictado_bruto,
-            "result": result,
-            "actions": interpretation.get("actions", []),
-            "processed": True,
-            "provider": interpretation.get("provider", os.getenv("AI_PROVIDER", "rules")),
-        },
-    )
+@app.post("/process")
+async def legacy_process_disabled():
+    return RedirectResponse("/iad/trabajo", status_code=303)
 
 
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
+        "app": "iadictador",
         "ai_provider": os.getenv("AI_PROVIDER", "rules"),
         "openai_model": os.getenv("OPENAI_MODEL", ""),
     }
 
 
-# --- IA DICTADOR STAGE 1 INTEGRATION ---
-try:
-    import os as _iad_os
-    from starlette.middleware.sessions import SessionMiddleware as _IADSessionMiddleware
-
-    try:
-        from iadictador.router import router as _iadictador_router, init_iadictador as _init_iadictador
-    except Exception:
-        from backend.iadictador.router import router as _iadictador_router, init_iadictador as _init_iadictador
-
-    _iad_secret = (
-        _iad_os.getenv("IADICTADOR_SESSION_SECRET")
-        or _iad_os.getenv("SESSION_SECRET")
-        or _iad_os.getenv("ANGIOPACS_SESSION_SECRET")
-        or "iadictador_dev_secret_change_me"
-    )
-
-    if not any(getattr(m, "cls", None) is _IADSessionMiddleware for m in getattr(app, "user_middleware", [])):
-        app.add_middleware(_IADSessionMiddleware, secret_key=_iad_secret)
-
-    _init_iadictador()
-
-    if not getattr(app.state, "iadictador_router_loaded", False):
-        app.include_router(_iadictador_router)
-        app.state.iadictador_router_loaded = True
-
-except Exception as _iad_e:
-    print("IA Dictador no pudo iniciar:", repr(_iad_e))
-# --- END IA DICTADOR STAGE 1 INTEGRATION ---
-
+ensure_iad_template_schema()
+init_iadictador()
+app.include_router(iadictador_router)

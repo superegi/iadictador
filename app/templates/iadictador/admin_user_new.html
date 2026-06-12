@@ -1,0 +1,48 @@
+{% extends "iadictador/base.html" %}
+{% block title %}Nuevo usuario{% endblock %}
+{% block content %}
+
+<div class="panel" style="max-width:760px;">
+  <div class="top-actions">
+    <div style="flex:1;">
+      <h3>Crear usuario</h3>
+      <p class="muted">El usuario deberá cambiar la clave en el primer ingreso.</p>
+    </div>
+    <a class="button back-button" href="/iad/admin/usuarios">Volver</a>
+  </div>
+
+  <form method="post" action="/iad/admin/usuarios/crear">
+    <div class="grid-3">
+      <div>
+        <label>Usuario</label>
+        <input name="username" required>
+      </div>
+      <div>
+        <label>Email</label>
+        <input name="email" type="email">
+      </div>
+      <div>
+        <label>Rol</label>
+        <select name="role">
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+    </div>
+
+    <br>
+
+    <div class="grid-2">
+      <div>
+        <label>Clave temporal</label>
+        <input name="password" required>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="submit">Crear usuario</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
