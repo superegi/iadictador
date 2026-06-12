@@ -490,3 +490,52 @@ pre {
     justify-content: flex-start;
   }
 }
+
+/* IAD_EXTRACCION_CSS_MARKER */
+.iad-extraction-card {
+  margin-top: 1rem;
+}
+
+.iad-extraction-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.iad-extraction-box {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 14px;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.iad-extraction-wide {
+  grid-column: 1 / -1;
+}
+
+.iad-extraction-box h3 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.iad-extraction-box label {
+  display: block;
+  margin-top: 0.55rem;
+  margin-bottom: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  opacity: 0.78;
+}
+
+.iad-extraction-box input,
+.iad-extraction-box textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 800px) {
+  .iad-extraction-grid {
+    grid-template-columns: 1fr;
+  }
+}

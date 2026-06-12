@@ -1,3 +1,4 @@
+from app.services.ai.tasks.info_extractor import extract_information_from_text
 from app.services.ai.tasks.audio_transcriber import transcribe_audio_upload, AudioTranscriptionError
 from fastapi.responses import JSONResponse
 from fastapi import UploadFile, File
@@ -722,6 +723,278 @@ def save_and_copy_ot(
     audit(db, request, "OT_VALIDATED", f"ot_id={ot.id}; ot_user_number={ot.ot_user_number}", user.id)
 
     return PlainTextResponse(accepted)
+
+
+
+
+# IAD_EXTRACCION_CONTROLADA_MARKER
+def _iad_extraction_current_user(request, db):
+    """Compatibilidad con distintas versiones internas de login."""
+    for fname in ("current_user_from_request", "get_current_user", "current_user", "require_current_user"):
+        fn = globals().get(fname)
+        if callable(fn):
+            try:
+                return fn(request, db)
+            except TypeError:
+                try:
+                    return fn(request)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+    session = getattr(request, "session", {}) or {}
+    user_id = session.get("user_id") or session.get("iad_user_id") or session.get("uid")
+    if user_id:
+        for obj in globals().values():
+            if isinstance(obj, type) and getattr(obj, "__tablename__", "") in {"iad_users", "users", "usuarios"}:
+                try:
+                    return db.query(obj).filter(obj.id == int(user_id)).first()
+                except Exception:
+                    return None
+    return None
+
+
+def _iad_extraction_ot_model():
+    """Detecta dinámicamente el modelo SQLAlchemy de OT."""
+    candidates = []
+    for obj in globals().values():
+        if not isinstance(obj, type):
+            continue
+        tablename = getattr(obj, "__tablename__", "")
+        attrs = set(dir(obj))
+        score = 0
+        if tablename in {"iad_ots", "ots", "ordenes_trabajo", "work_orders"}:
+            score += 100
+        if "audio_transcription_initial" in attrs:
+            score += 30
+        if "audio_transcription_final" in attrs:
+            score += 30
+        if "input_text_initial" in attrs or "input_text_final" in attrs:
+            score += 20
+        if "final_text" in attrs or "report_final" in attrs:
+            score += 10
+        if "id" in attrs:
+            score += 5
+        if score:
+            candidates.append((score, obj))
+    if not candidates:
+        raise RuntimeError("No pude detectar el modelo de OT.")
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
+
+
+def _iad_extraction_get_ot(db, ot_id: int):
+    model = _iad_extraction_ot_model()
+    return db.query(model).filter(model.id == ot_id).first()
+
+
+def _iad_extraction_source_text(ot, override_text: str = "") -> str:
+    parts = []
+    if override_text and override_text.strip():
+        parts.append(override_text.strip())
+
+    preferred_attrs = [
+        "input_text_final",
+        "input_text_initial",
+        "audio_transcription_final",
+        "audio_transcription_initial",
+        "transcription_final",
+        "transcription_initial",
+        "texto_final",
+        "texto_inicial",
+        "final_text",
+        "initial_text",
+        "raw_text",
+        "description",
+        "descripcion",
+    ]
+
+    for attr in preferred_attrs:
+        value = getattr(ot, attr, None)
+        if value and str(value).strip():
+            parts.append(str(value).strip())
+
+    # Quitar duplicados conservando orden.
+    seen = set()
+    unique = []
+    for item in parts:
+        key = item.strip()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(key)
+
+    return "\n\n".join(unique).strip()
+
+
+def _iad_extraction_list_templates(db):
+    """Lista plantillas sin depender de nombres exactos de modelos."""
+    from sqlalchemy import text as _sa_text
+
+    out = []
+    try:
+        tables = db.execute(
+            _sa_text("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        ).fetchall()
+    except Exception:
+        return out
+
+    for row in tables:
+        table = row[0]
+        table_l = table.lower()
+        if not any(key in table_l for key in ("template", "plantilla")):
+            continue
+
+        try:
+            cols = db.execute(_sa_text(f'PRAGMA table_info("{table}")')).fetchall()
+        except Exception:
+            continue
+
+        colnames = [c[1] for c in cols]
+        id_col = "id" if "id" in colnames else None
+        name_col = None
+        for candidate in ("name", "nombre", "title", "titulo", "template_name"):
+            if candidate in colnames:
+                name_col = candidate
+                break
+
+        if not id_col or not name_col:
+            continue
+
+        try:
+            rows = db.execute(
+                _sa_text(f'SELECT "{id_col}", "{name_col}" FROM "{table}" ORDER BY "{name_col}" LIMIT 200')
+            ).fetchall()
+            for r in rows:
+                if r[1]:
+                    out.append({"id": r[0], "nombre": str(r[1]), "tabla": table})
+        except Exception:
+            continue
+
+    # Dedupe por nombre.
+    seen = set()
+    clean = []
+    for item in out:
+        key = item["nombre"].strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            clean.append(item)
+    return clean
+
+
+def _iad_extraction_ensure_table(db):
+    from sqlalchemy import text as _sa_text
+
+    db.execute(_sa_text("""
+        CREATE TABLE IF NOT EXISTS iad_ot_extractions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ot_id INTEGER NOT NULL UNIQUE,
+            extraction_json TEXT NOT NULL,
+            raw_text TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.commit()
+
+
+def _iad_extraction_get_saved(db, ot_id: int):
+    from sqlalchemy import text as _sa_text
+    import json as _json
+
+    _iad_extraction_ensure_table(db)
+    row = db.execute(
+        _sa_text("""
+            SELECT extraction_json, raw_text, created_at, updated_at
+            FROM iad_ot_extractions
+            WHERE ot_id = :ot_id
+        """),
+        {"ot_id": ot_id},
+    ).fetchone()
+
+    if not row:
+        return None
+
+    try:
+        extraction = _json.loads(row[0] or "{}")
+    except Exception:
+        extraction = {}
+
+    return {
+        "ot_id": ot_id,
+        "extraction": extraction,
+        "raw_text": row[1] or "",
+        "created_at": row[2],
+        "updated_at": row[3],
+    }
+
+
+def _iad_extraction_save(db, ot_id: int, extraction: dict, raw_text: str):
+    from sqlalchemy import text as _sa_text
+    import json as _json
+
+    _iad_extraction_ensure_table(db)
+    payload = _json.dumps(extraction, ensure_ascii=False, indent=2)
+
+    db.execute(
+        _sa_text("""
+            INSERT INTO iad_ot_extractions (ot_id, extraction_json, raw_text, created_at, updated_at)
+            VALUES (:ot_id, :extraction_json, :raw_text, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(ot_id) DO UPDATE SET
+                extraction_json = excluded.extraction_json,
+                raw_text = excluded.raw_text,
+                updated_at = CURRENT_TIMESTAMP
+        """),
+        {
+            "ot_id": ot_id,
+            "extraction_json": payload,
+            "raw_text": raw_text,
+        },
+    )
+    db.commit()
+
+
+@router.get("/iad/ot/{ot_id}/extraccion.json")
+async def iad_ot_extraction_json(request: Request, ot_id: int, db: Session = Depends(get_db)):
+    from fastapi.responses import JSONResponse
+
+    user = _iad_extraction_current_user(request, db)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+
+    ot = _iad_extraction_get_ot(db, ot_id)
+    if not ot:
+        return JSONResponse({"ok": False, "error": "ot_not_found"}, status_code=404)
+
+    saved = _iad_extraction_get_saved(db, ot_id)
+    if not saved:
+        return JSONResponse({"ok": True, "has_extraction": False, "ot_id": ot_id, "extraction": {}})
+
+    return JSONResponse({"ok": True, "has_extraction": True, **saved})
+
+
+@router.post("/iad/ot/{ot_id}/extraer-informacion")
+async def iad_ot_extract_information_post(
+    request: Request,
+    ot_id: int,
+    texto_bruto: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = _iad_extraction_current_user(request, db)
+    if not user:
+        return redirect("/iad/login")
+
+    ot = _iad_extraction_get_ot(db, ot_id)
+    if not ot:
+        return redirect("/iad/trabajo")
+
+    source_text = _iad_extraction_source_text(ot, texto_bruto)
+    templates = _iad_extraction_list_templates(db)
+    extraction = extract_information_from_text(source_text, templates)
+
+    _iad_extraction_save(db, ot_id, extraction, source_text)
+
+    return redirect(f"/iad/ot/{ot_id}?extraida=1")
 
 
 @router.get("/iad/historial", response_class=HTMLResponse)
@@ -2160,4 +2433,3 @@ def admin_user_detail_post(
     return redirect(f"/iad/admin/usuarios/{target.id}")
 
 # IAD_PROFILE_TEMPLATE_USER_ROUTES_END
-

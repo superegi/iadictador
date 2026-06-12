@@ -744,6 +744,195 @@ document.addEventListener("DOMContentLoaded", function () {
 /* IAD_AUDIO_TRANSCRIPTION_PATCH_JS_END */
 </script>
 
+
+{# IAD_EXTRACCION_UI_MARKER #}
+{% if ot %}
+<section class="iad-card iad-extraction-card" id="iad-extraction-card" data-ot-id="{{ ot.id }}">
+  <div class="iad-section-head">
+    <div>
+      <h2>Extracción IA</h2>
+      <p class="iad-muted">
+        Paso intermedio: detectar plantilla sugerida, información secundaria y hallazgos radiológicos antes de generar el informe final.
+      </p>
+    </div>
+  </div>
+
+  <form method="post" action="/iad/ot/{{ ot.id }}/extraer-informacion" id="iad-extract-form">
+    <input type="hidden" name="texto_bruto" id="iad-extract-texto-bruto" value="">
+    <button type="submit" class="iad-btn iad-btn-primary">
+      Extraer información
+    </button>
+  </form>
+
+  <div id="iad-extraction-status" class="iad-muted" style="margin-top: 0.75rem;">
+    Sin extracción cargada todavía.
+  </div>
+
+  <div id="iad-extraction-result" class="iad-extraction-grid" style="display:none;">
+    <div class="iad-extraction-box">
+      <h3>Plantilla sugerida</h3>
+      <label>Nombre</label>
+      <input id="iad-ext-plantilla-nombre" type="text" readonly>
+      <label>Confianza</label>
+      <input id="iad-ext-plantilla-confianza" type="text" readonly>
+      <label>Motivo</label>
+      <textarea id="iad-ext-plantilla-motivo" rows="2" readonly></textarea>
+    </div>
+
+    <div class="iad-extraction-box">
+      <h3>Información secundaria</h3>
+      <label>Paciente</label>
+      <input id="iad-ext-paciente" type="text">
+      <label>Edad</label>
+      <input id="iad-ext-edad" type="text">
+      <label>Sexo</label>
+      <input id="iad-ext-sexo" type="text">
+      <label>Ocupación / lugar de trabajo</label>
+      <input id="iad-ext-ocupacion" type="text">
+      <label>Institución / lugar</label>
+      <input id="iad-ext-institucion" type="text">
+      <label>Motivo del examen</label>
+      <textarea id="iad-ext-motivo" rows="2"></textarea>
+      <label>Antecedentes</label>
+      <textarea id="iad-ext-antecedentes" rows="2"></textarea>
+    </div>
+
+    <div class="iad-extraction-box iad-extraction-wide">
+      <h3>Hallazgos radiológicos detectados</h3>
+      <textarea id="iad-ext-hallazgos" rows="8"></textarea>
+      <p class="iad-muted">
+        Estos hallazgos todavía no se mezclan con la plantilla. El próximo paso será el botón “Procesar todo”.
+      </p>
+    </div>
+
+    <div class="iad-extraction-box iad-extraction-wide">
+      <h3>Advertencias</h3>
+      <ul id="iad-ext-advertencias"></ul>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  const card = document.getElementById("iad-extraction-card");
+  if (!card) return;
+
+  const otId = card.dataset.otId;
+  const form = document.getElementById("iad-extract-form");
+  const hidden = document.getElementById("iad-extract-texto-bruto");
+  const status = document.getElementById("iad-extraction-status");
+  const result = document.getElementById("iad-extraction-result");
+
+  function val(obj, path, fallback = "") {
+    let cur = obj;
+    for (const key of path) {
+      if (!cur || typeof cur !== "object") return fallback;
+      cur = cur[key];
+    }
+    if (cur === null || cur === undefined) return fallback;
+    return String(cur);
+  }
+
+  function setValue(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = value || "";
+  }
+
+  function collectCurrentText() {
+    const candidates = [
+      'textarea[name="input_text_final"]',
+      'textarea[name="input_text_initial"]',
+      'textarea[name="audio_transcription_final"]',
+      'textarea[name="audio_transcription_initial"]',
+      'textarea[name*="transcription"]',
+      'textarea[name*="texto"]',
+      'textarea[name*="text"]',
+      'textarea'
+    ];
+
+    const pieces = [];
+    const seen = new Set();
+
+    for (const selector of candidates) {
+      document.querySelectorAll(selector).forEach(function (el) {
+        const txt = (el.value || el.textContent || "").trim();
+        if (txt && !seen.has(txt)) {
+          seen.add(txt);
+          pieces.push(txt);
+        }
+      });
+    }
+
+    return pieces.join("\n\n").trim();
+  }
+
+  if (form && hidden) {
+    form.addEventListener("submit", function () {
+      hidden.value = collectCurrentText();
+      if (status) status.textContent = "Extrayendo información...";
+    });
+  }
+
+  async function loadExtraction() {
+    try {
+      const response = await fetch(`/iad/ot/${otId}/extraccion.json`, { credentials: "same-origin" });
+      if (!response.ok) {
+        if (status) status.textContent = "No se pudo cargar extracción.";
+        return;
+      }
+
+      const data = await response.json();
+      if (!data.has_extraction) {
+        if (status) status.textContent = "Sin extracción guardada. Usa “Extraer información”.";
+        return;
+      }
+
+      const extraction = data.extraction || {};
+      const plantilla = extraction.plantilla_sugerida || {};
+      const info = extraction.informacion_secundaria || {};
+
+      setValue("iad-ext-plantilla-nombre", plantilla.nombre || "");
+      setValue("iad-ext-plantilla-confianza", plantilla.confianza || "");
+      setValue("iad-ext-plantilla-motivo", plantilla.motivo || "");
+
+      setValue("iad-ext-paciente", info.paciente_nombre_completo || "");
+      setValue("iad-ext-edad", info.edad || "");
+      setValue("iad-ext-sexo", info.sexo || "");
+      setValue("iad-ext-ocupacion", info.ocupacion_lugar_trabajo || "");
+      setValue("iad-ext-institucion", info.institucion_lugar || "");
+      setValue("iad-ext-motivo", info.motivo_examen || "");
+      setValue("iad-ext-antecedentes", info.antecedentes || "");
+      setValue("iad-ext-hallazgos", extraction.hallazgos_radiologicos || "");
+
+      const ul = document.getElementById("iad-ext-advertencias");
+      if (ul) {
+        ul.innerHTML = "";
+        const warnings = Array.isArray(extraction.advertencias) ? extraction.advertencias : [];
+        if (warnings.length === 0) {
+          const li = document.createElement("li");
+          li.textContent = "Sin advertencias.";
+          ul.appendChild(li);
+        } else {
+          warnings.forEach(function (w) {
+            const li = document.createElement("li");
+            li.textContent = String(w);
+            ul.appendChild(li);
+          });
+        }
+      }
+
+      if (result) result.style.display = "";
+      if (status) status.textContent = `Extracción cargada. Actualizada: ${data.updated_at || ""}`;
+    } catch (err) {
+      if (status) status.textContent = "Error cargando extracción: " + err;
+    }
+  }
+
+  loadExtraction();
+})();
+</script>
+{% endif %}
+
 {% endblock %}
 
 {% block content %}
