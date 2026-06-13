@@ -764,6 +764,49 @@ document.addEventListener("DOMContentLoaded", function () {
     </button>
   </form>
 
+<section id="iad-rad-one-step-panel" class="iad-rad-one-step-panel">
+  <div class="iad-rad-one-card">
+    <div id="iad-rad-one-status" class="iad-rad-one-status">
+      Pendiente. Graba, sube audio o pega texto; luego aprieta “Analizar radiología”.
+    </div>
+
+    <div id="iad-rad-one-template-box" class="iad-rad-one-template-box" style="display:none;">
+      <div>
+        <span class="iad-rad-one-label">Plantilla a usar</span>
+        <strong id="iad-rad-one-template-name">—</strong>
+      </div>
+      <div>
+        <span class="iad-rad-one-label">Confianza</span>
+        <strong id="iad-rad-one-confidence">—</strong>
+      </div>
+    </div>
+
+    <input id="iad-rad-one-template-id" type="hidden">
+    <textarea id="iad-rad-one-hallazgos" style="display:none;"></textarea>
+
+    <div id="iad-rad-one-results" style="display:none;">
+      <div class="iad-rad-one-editors">
+        <div>
+          <label>Resultado primario IA</label>
+          <textarea id="iad-rad-one-primary-report" rows="18" readonly></textarea>
+        </div>
+
+        <div>
+          <label>Resultado revisado</label>
+          <textarea id="iad-rad-one-revised-report" rows="18"></textarea>
+        </div>
+      </div>
+
+      <div class="iad-rad-one-actions">
+        <button type="button" id="iad-rad-one-save" class="iad-btn iad-btn-primary">Guardar revisión</button>
+        <button type="button" id="iad-rad-one-copy" class="iad-btn iad-btn-secondary">Copiar resultado revisado</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+
   <div id="iad-extraction-status" class="iad-muted" style="margin-top: 0.75rem;">
     Sin extracción cargada todavía.
   </div>
@@ -937,7 +980,7 @@ document.addEventListener("DOMContentLoaded", function () {
 {% block content %}
 
 {% if not ot %}
-<form method="post" action="/iad/ot/crear" enctype="multipart/form-data">
+<form id="iad-main-work-form" method="post" action="javascript:void(0)" enctype="multipart/form-data" onsubmit="return false;">
   <input type="hidden" name="timezone" id="timezone">
   <input type="hidden" name="utc_offset_minutes" id="utc_offset_minutes">
 
@@ -977,7 +1020,7 @@ document.addEventListener("DOMContentLoaded", function () {
     <button type="button" id="recordStopBtn" class="back-button" disabled>Detener</button>
     <span id="recordingIndicator" class="recording-indicator" style="display:none;">● Grabando</span>
     <span id="recordingTimer" class="muted">00:00</span>
-    <button type="button" id="transcribeAllBtn" class="ai-button">Transcribir todos</button>
+    <button type="button" id="transcribeAllBtn" class="ai-button" style="display:none;" aria-hidden="true">Transcribir todos</button>
   </div>
 
   <div id="audio_file_list" class="audio-file-list"></div>
@@ -989,10 +1032,394 @@ document.addEventListener("DOMContentLoaded", function () {
     <textarea name="input_text_final" placeholder="Ingrese o pegue aquí la información principal. La transcripción de audio quedará aquí cuando se conecte el motor de transcripción."></textarea>
 
     <br><br>
-    <button type="submit">Procesar</button>
+    
+<script>
+/* IAD_RUNNER_NEAR_BUTTON_V2 */
+(function () {
+  function norm(v) { return String(v || "").trim(); }
+
+  function visible(el) {
+    if (!el) return false;
+    var s = window.getComputedStyle(el);
+    var r = el.getBoundingClientRect();
+    return s.display !== "none" && s.visibility !== "hidden" && r.width > 0 && r.height > 0;
+  }
+
+  function show(el) {
+    if (el) {
+      el.style.display = "";
+      el.removeAttribute("aria-hidden");
+    }
+  }
+
+  function setStatus(msg) {
+    ensurePanel();
+    var el = document.getElementById("iad-rad-one-status");
+    if (el) el.textContent = msg;
+  }
+
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value || "";
+  }
+
+  function setValue(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.value = value || "";
+  }
+
+  function getValue(id) {
+    var el = document.getElementById(id);
+    return el ? norm(el.value) : "";
+  }
+
+  function mainTextarea() {
+    var preferred = document.querySelector('textarea[name="input_text_final"]');
+    if (preferred) return preferred;
+
+    var arr = Array.from(document.querySelectorAll("textarea"))
+      .filter(visible)
+      .filter(function (t) {
+        if (t.closest("#iad-rad-one-step-panel")) return false;
+        var raw = norm((t.id || "") + " " + (t.name || "") + " " + (t.placeholder || ""));
+        return !/plantilla|template|hallazgo|resultado|revisado|primary|extra|iad-rad/i.test(raw);
+      });
+
+    return arr[0] || null;
+  }
+
+  function confidencePercent(confidence) {
+    var c = String(confidence || "").toLowerCase();
+    if (c.includes("alta")) return "90%";
+    if (c.includes("media")) return "65%";
+    if (c.includes("baja")) return "35%";
+    var n = parseFloat(c.replace(",", "."));
+    if (!Number.isNaN(n)) return (n <= 1 ? Math.round(n * 100) : Math.round(n)) + "%";
+    return "";
+  }
+
+  function inferModalityFromTemplate(name) {
+    var raw = String(name || "").trim().toLowerCase();
+    if (raw.startsWith("tc") || raw.includes("tomografía") || raw.includes("tomografia") || raw.includes("tac")) return "TC";
+    if (raw.startsWith("rm") || raw.includes("resonancia")) return "RM";
+    if (raw.startsWith("rx") || raw.includes("radiografía") || raw.includes("radiografia")) return "RX";
+    if (raw.startsWith("us") || raw.startsWith("eco") || raw.includes("ecografía") || raw.includes("ecografia") || raw.includes("ultrasonido")) return "US";
+    if (raw.startsWith("mg") || raw.includes("mamografía") || raw.includes("mamografia")) return "MG";
+    return "";
+  }
+
+  function inferTipoFromTemplate(name) {
+    var raw = String(name || "").trim();
+    if (!raw) return "";
+    var parts = raw.split(" - ");
+    if (parts.length > 1) return parts.slice(1).join(" - ").trim();
+    return raw;
+  }
+
+  function getOtId() {
+    var m = window.location.pathname.match(/\/ot\/(\d+)/i);
+    return m ? m[1] : "";
+  }
+
+  function ensurePanel() {
+    var panel = document.getElementById("iad-rad-one-step-panel");
+    if (panel) return panel;
+
+    panel = document.createElement("section");
+    panel.id = "iad-rad-one-step-panel";
+    panel.className = "iad-rad-one-step-panel";
+    panel.innerHTML = [
+      '<div class="iad-rad-one-card">',
+      '  <div id="iad-rad-one-status" class="iad-rad-one-status">Pendiente.</div>',
+      '  <div id="iad-rad-one-template-box" class="iad-rad-one-template-box" style="display:none;">',
+      '    <div><span class="iad-rad-one-label">Plantilla a usar</span><strong id="iad-rad-one-template-name">—</strong></div>',
+      '    <div><span class="iad-rad-one-label">Confianza</span><strong id="iad-rad-one-confidence">—</strong></div>',
+      '  </div>',
+      '  <input id="iad-rad-one-template-id" type="hidden">',
+      '  <textarea id="iad-rad-one-hallazgos" style="display:none;"></textarea>',
+      '  <div id="iad-rad-one-results" style="display:none;">',
+      '    <div class="iad-rad-one-editors">',
+      '      <div><label>Resultado primario IA</label><textarea id="iad-rad-one-primary-report" rows="18" readonly></textarea></div>',
+      '      <div><label>Resultado revisado</label><textarea id="iad-rad-one-revised-report" rows="18"></textarea></div>',
+      '    </div>',
+      '    <div class="iad-rad-one-actions">',
+      '      <button type="button" id="iad-rad-one-save" class="iad-btn iad-btn-primary">Guardar revisión</button>',
+      '      <button type="button" id="iad-rad-one-copy" class="iad-btn iad-btn-secondary">Copiar resultado revisado</button>',
+      '    </div>',
+      '  </div>',
+      '</div>'
+    ].join("");
+
+    var btn = document.getElementById("iad-rad-one-analyze");
+    if (btn) btn.insertAdjacentElement("afterend", panel);
+    else document.body.appendChild(panel);
+
+    return panel;
+  }
+
+  function audioCount() {
+    var n = 0;
+    document.querySelectorAll("input[type='file']").forEach(function (input) {
+      if (input.files) n += input.files.length;
+    });
+    return n;
+  }
+
+  function waitForTextChange(textarea, before, timeoutMs) {
+    var start = Date.now();
+
+    return new Promise(function (resolve) {
+      function tick() {
+        var now = norm(textarea.value);
+        if (now && now !== before) return resolve(now);
+        if (Date.now() - start > timeoutMs) return resolve(norm(textarea.value));
+        setTimeout(tick, 700);
+      }
+      tick();
+    });
+  }
+
+  async function transcribeIfNeeded(textarea) {
+    if (audioCount() === 0) return norm(textarea.value);
+
+    var btn = document.getElementById("transcribeAllBtn");
+    if (!btn) return norm(textarea.value);
+
+    var before = norm(textarea.value);
+    setStatus("Transcribiendo audio...");
+
+    btn.click();
+
+    var after = await waitForTextChange(textarea, before, 120000);
+    return after || norm(textarea.value);
+  }
+
+  window.iadRunOneStep = async function (ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+
+    var btn = document.getElementById("iad-rad-one-analyze");
+    var txt = mainTextarea();
+
+    ensurePanel();
+
+    if (!txt) {
+      alert("No encontré el cuadro principal de texto.");
+      return false;
+    }
+
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Procesando...";
+      }
+
+      var raw = await transcribeIfNeeded(txt);
+      raw = norm(raw || txt.value);
+
+      if (!raw) {
+        alert("No hay texto para analizar.");
+        return false;
+      }
+
+      window.__iadLastDictatedText = raw;
+
+      setStatus("Analizando plantilla...");
+
+      var abody = new URLSearchParams();
+      abody.set("texto_bruto", raw);
+
+      var aresp = await fetch("/iad/analizar-radiologia.json", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: abody.toString()
+      });
+
+      if (!aresp.ok) {
+        var atxt = await aresp.text();
+        throw new Error("Análisis HTTP " + aresp.status + ": " + atxt.slice(0, 400));
+      }
+
+      var analysis = await aresp.json();
+      if (analysis.ok === false) throw new Error(analysis.error || "No se detectó plantilla.");
+
+      var tpl = analysis.plantilla_sugerida || {};
+      var plantillaNombre = norm(tpl.nombre || "");
+      var plantillaId = norm(tpl.id || "");
+      var hallazgos = norm(analysis.hallazgos_radiologicos || raw);
+
+      if (!plantillaNombre && !plantillaId) throw new Error("No se detectó plantilla.");
+
+      setText("iad-rad-one-template-name", plantillaNombre || ("ID " + plantillaId));
+      setText("iad-rad-one-confidence", (tpl.confianza || "—") + (confidencePercent(tpl.confianza) ? " · " + confidencePercent(tpl.confianza) : ""));
+      setValue("iad-rad-one-template-id", plantillaId);
+      setValue("iad-rad-one-hallazgos", hallazgos);
+      show(document.getElementById("iad-rad-one-template-box"));
+
+      window.__iadLastAnalysis = analysis;
+
+      setStatus("Plantilla detectada. Generando informe...");
+
+      var gbody = new URLSearchParams();
+      gbody.set("plantilla_nombre", plantillaNombre);
+      gbody.set("plantilla_id", plantillaId);
+      gbody.set("hallazgos", hallazgos);
+
+      var gresp = await fetch("/iad/generar-informe-radiologico.json", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: gbody.toString()
+      });
+
+      if (!gresp.ok) {
+        var gtxt = await gresp.text();
+        throw new Error("Generación HTTP " + gresp.status + ": " + gtxt.slice(0, 400));
+      }
+
+      var generated = await gresp.json();
+      if (generated.ok === false) throw new Error(generated.error || "No se pudo generar informe.");
+
+      var report = generated.informe_final || "";
+
+      setValue("iad-rad-one-primary-report", report);
+      setValue("iad-rad-one-revised-report", report);
+      show(document.getElementById("iad-rad-one-results"));
+
+      window.__iadLastGenerated = generated;
+
+      setStatus("Informe generado en esta misma página.");
+      return false;
+    } catch (err) {
+      console.error(err);
+      setStatus("Error: " + err.message);
+      alert("Error: " + err.message);
+      return false;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Analizar radiología";
+      }
+    }
+  };
+
+  window.iadSaveReviewOneStep = async function (ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+
+    var plantillaNombre = norm(document.getElementById("iad-rad-one-template-name") && document.getElementById("iad-rad-one-template-name").textContent);
+    var plantillaId = document.getElementById("iad-rad-one-template-id") ? document.getElementById("iad-rad-one-template-id").value : "";
+    var hallazgos = document.getElementById("iad-rad-one-hallazgos") ? document.getElementById("iad-rad-one-hallazgos").value : "";
+    var primary = document.getElementById("iad-rad-one-primary-report") ? document.getElementById("iad-rad-one-primary-report").value : "";
+    var revised = document.getElementById("iad-rad-one-revised-report") ? document.getElementById("iad-rad-one-revised-report").value : "";
+    var txt = mainTextarea();
+
+    if (!primary || !revised) {
+      alert("No hay informe generado para guardar.");
+      return false;
+    }
+
+    var meta = {
+      url: window.location.href,
+      analysis: window.__iadLastAnalysis || null,
+      generated: window.__iadLastGenerated || null,
+      user_agent: navigator.userAgent,
+      saved_at_client: new Date().toISOString()
+    };
+
+    var body = new URLSearchParams();
+    body.set("ot_id", getOtId());
+    body.set("texto_dictado", window.__iadLastDictatedText || norm(txt && txt.value));
+    body.set("plantilla_nombre", plantillaNombre);
+    body.set("plantilla_id", plantillaId);
+    body.set("hallazgos_detectados", hallazgos);
+    body.set("resultado_primario", primary);
+    body.set("resultado_revisado", revised);
+    body.set("modelo", "gpt");
+    body.set("metadata_json", JSON.stringify(meta));
+    body.set("titulo", plantillaNombre);
+    body.set("modalidad", inferModalityFromTemplate(plantillaNombre));
+    body.set("tipo", inferTipoFromTemplate(plantillaNombre));
+    body.set("paciente", "");
+    body.set("edad", "");
+
+    setStatus("Guardando revisión...");
+
+    try {
+      var resp = await fetch("/iad/guardar-revision-y-historial-v3.json", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: body.toString()
+      });
+
+      if (!resp.ok) {
+        var rtxt = await resp.text();
+        throw new Error("Guardar HTTP " + resp.status + ": " + rtxt.slice(0, 400));
+      }
+
+      var data = await resp.json();
+      var sync = data.historial_sync || {};
+
+      if (sync.ok) setStatus("Revisión guardada. Historial actualizado: OT #" + (data.ot_id || sync.ot_id || ""));
+      else setStatus("Revisión guardada. Historial no sincronizado: " + (sync.reason || "sin detalle"));
+    } catch (err) {
+      console.error(err);
+      setStatus("Error al guardar: " + err.message);
+      alert("Error al guardar: " + err.message);
+    }
+
+    return false;
+  };
+
+  window.iadCopyReviewOneStep = function (ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+
+    var report = document.getElementById("iad-rad-one-revised-report");
+    if (!report) return false;
+
+    navigator.clipboard.writeText(report.value || "").then(function () {
+      setStatus("Resultado revisado copiado.");
+    }).catch(function () {
+      report.focus();
+      report.select();
+      document.execCommand("copy");
+      setStatus("Resultado revisado copiado.");
+    });
+
+    return false;
+  };
+
+  document.addEventListener("DOMContentLoaded", function () {
+    var form = document.getElementById("iad-main-work-form");
+    if (form) {
+      form.setAttribute("action", "javascript:void(0)");
+      form.setAttribute("onsubmit", "return false;");
+    }
+
+    var btn = document.getElementById("iad-rad-one-analyze");
+    if (btn) {
+      btn.type = "button";
+      btn.onclick = window.iadRunOneStep;
+    }
+
+    console.log("[IAD] runner near button activo");
+  });
+})();
+</script>
+
+<button type="button" id="iad-rad-one-analyze" class="iad-btn iad-btn-primary iad-rad-one-main-btn ai-button" onclick="return iadRunOneStep(event);">Analizar radiología</button>
   </div>
 
-  <div class="panel">
+  <div class="panel" style="display:none !important;" aria-hidden="true">
     <h3>2) Información extra</h3>
     <p class="muted">Opcional. Se guarda junto a la OT y se usará para procesar con contexto.</p>
 
@@ -1105,7 +1532,7 @@ document.addEventListener("DOMContentLoaded", function () {
     </details>
 
     <br>
-    <button type="submit">Procesar con datos extra</button>
+    <button type="button" style="display:none;" aria-hidden="true">Procesar con datos extra</button>
   </div>
 </form>
 {% else %}
@@ -1420,4 +1847,465 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 
 {% endblock %}
-<script src="/static/iadictador_radiology_flow.js?v=20"></script>
+<script>
+/* IAD_WORK_TEMPLATE_NO_OLD_UI_V1 */
+(function () {
+  function txt(el) { return (el && (el.innerText || el.textContent) || "").trim(); }
+  function hide(el) { if (el) { el.style.display = "none"; el.setAttribute("aria-hidden", "true"); } }
+  function block(el) { return el && el.closest("section, .iad-card, .card, .panel, fieldset, div"); }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("button").forEach(function (btn) {
+      var t = txt(btn);
+      if (/^Transcribir todos$/i.test(t)) hide(btn);
+      if (/^Procesar con datos extra$/i.test(t)) hide(btn);
+    });
+
+    document.querySelectorAll("h1,h2,h3,h4,legend,summary,strong,p").forEach(function (el) {
+      var t = txt(el);
+      if (/^2\)\s*Información extra/i.test(t)) hide(block(el));
+      if (/^3\)\s*Confluencia/i.test(t)) hide(block(el));
+      if (/Plantilla de trabajo/i.test(t)) hide(block(el));
+      if (/Lugar\s*\/\s*institución/i.test(t)) hide(block(el));
+      if (/Datos del paciente/i.test(t)) hide(block(el));
+    });
+  });
+})();
+</script>
+<script src="/static/iadictador_radiology_flow.js?v=22"></script>
+
+
+<script>
+/* IAD_HIDE_INFO_EXTRA_INLINE_V1 */
+(function () {
+  function t(el) { return (el && (el.innerText || el.textContent) || "").trim(); }
+  function hide(el) { if (el) { el.style.display = "none"; el.setAttribute("aria-hidden", "true"); } }
+  function block(el) { return el && el.closest("section, .iad-card, .card, .panel, fieldset, div"); }
+
+  function run() {
+    document.querySelectorAll("button").forEach(function (btn) {
+      var txt = t(btn);
+      if (/^Transcribir todos$/i.test(txt)) hide(btn);
+      if (/^Procesar con datos extra$/i.test(txt)) hide(btn);
+    });
+
+    document.querySelectorAll("h1,h2,h3,h4,legend,summary,strong,p,label").forEach(function (el) {
+      var txt = t(el);
+      if (/^2\)\s*Información extra/i.test(txt)) hide(block(el));
+      if (/^3\)\s*Confluencia/i.test(txt)) hide(block(el));
+      if (/Plantilla de trabajo/i.test(txt)) hide(block(el));
+      if (/Lugar\s*\/\s*institución/i.test(txt)) hide(block(el));
+      if (/Datos del paciente/i.test(txt)) hide(block(el));
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", run);
+  setTimeout(run, 300);
+  setTimeout(run, 1000);
+})();
+</script>
+
+
+<script>
+/* IAD_INLINE_ONE_STEP_RUNNER_V1 */
+(function () {
+  function norm(v) { return String(v || "").trim(); }
+  function show(el) { if (el) { el.style.display = ""; el.removeAttribute("aria-hidden"); } }
+  function hide(el) { if (el) { el.style.display = "none"; el.setAttribute("aria-hidden", "true"); } }
+
+  function setStatus(msg) {
+    ensurePanel();
+    var el = document.getElementById("iad-rad-one-status");
+    if (el) el.textContent = msg;
+  }
+
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value || "";
+  }
+
+  function setValue(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.value = value || "";
+  }
+
+  function getValue(id) {
+    var el = document.getElementById(id);
+    return el ? norm(el.value) : "";
+  }
+
+  function visible(el) {
+    if (!el) return false;
+    var st = window.getComputedStyle(el);
+    var r = el.getBoundingClientRect();
+    return st.display !== "none" && st.visibility !== "hidden" && r.width > 0 && r.height > 0;
+  }
+
+  function findMainTextarea() {
+    var arr = Array.from(document.querySelectorAll("textarea"))
+      .filter(visible)
+      .filter(function (el) {
+        if (el.closest("#iad-rad-one-step-panel")) return false;
+        var raw = norm((el.id || "") + " " + (el.name || "") + " " + (el.placeholder || ""));
+        if (/plantilla|hallazgo|resultado|revisado|primary|extra|iad-rad/i.test(raw)) return false;
+        return true;
+      });
+
+    if (!arr.length) return null;
+
+    arr.sort(function (a, b) {
+      var av = norm(a.value).length;
+      var bv = norm(b.value).length;
+      var at = (a.closest("section,.iad-card,.card,div") || a).innerText || "";
+      var bt = (b.closest("section,.iad-card,.card,div") || b).innerText || "";
+      var as = av * 10 + a.getBoundingClientRect().height;
+      var bs = bv * 10 + b.getBoundingClientRect().height;
+
+      if (/Información principal para el informe/i.test(at)) as += 100000;
+      if (/Información principal para el informe/i.test(bt)) bs += 100000;
+
+      return bs - as;
+    });
+
+    return arr[0];
+  }
+
+  function confidencePercent(confidence) {
+    var c = String(confidence || "").toLowerCase();
+
+    if (c.includes("alta")) return "90%";
+    if (c.includes("media")) return "65%";
+    if (c.includes("baja")) return "35%";
+
+    var n = parseFloat(c.replace(",", "."));
+    if (!Number.isNaN(n)) return (n <= 1 ? Math.round(n * 100) : Math.round(n)) + "%";
+
+    return "";
+  }
+
+  function inferModalityFromTemplate(name) {
+    var raw = String(name || "").trim().toLowerCase();
+    if (raw.startsWith("tc") || raw.includes("tomografía") || raw.includes("tomografia") || raw.includes("tac")) return "TC";
+    if (raw.startsWith("rm") || raw.includes("resonancia")) return "RM";
+    if (raw.startsWith("rx") || raw.includes("radiografía") || raw.includes("radiografia")) return "RX";
+    if (raw.startsWith("us") || raw.startsWith("eco") || raw.includes("ecografía") || raw.includes("ecografia") || raw.includes("ultrasonido")) return "US";
+    if (raw.startsWith("mg") || raw.includes("mamografía") || raw.includes("mamografia")) return "MG";
+    return "";
+  }
+
+  function inferTipoFromTemplate(name) {
+    var raw = String(name || "").trim();
+    if (!raw) return "";
+    var parts = raw.split(" - ");
+    if (parts.length > 1) return parts.slice(1).join(" - ").trim();
+    return raw;
+  }
+
+  function getOtId() {
+    var m = window.location.pathname.match(/\/ot\/(\d+)/i);
+    return m ? m[1] : "";
+  }
+
+  function ensurePanel() {
+    var panel = document.getElementById("iad-rad-one-step-panel");
+    if (panel) return panel;
+
+    panel = document.createElement("section");
+    panel.id = "iad-rad-one-step-panel";
+    panel.className = "iad-rad-one-step-panel";
+    panel.innerHTML = [
+      '<div class="iad-rad-one-card">',
+      '  <div id="iad-rad-one-status" class="iad-rad-one-status">Pendiente.</div>',
+      '  <div id="iad-rad-one-template-box" class="iad-rad-one-template-box" style="display:none;">',
+      '    <div><span class="iad-rad-one-label">Plantilla a usar</span><strong id="iad-rad-one-template-name">—</strong></div>',
+      '    <div><span class="iad-rad-one-label">Confianza</span><strong id="iad-rad-one-confidence">—</strong></div>',
+      '  </div>',
+      '  <input id="iad-rad-one-template-id" type="hidden">',
+      '  <textarea id="iad-rad-one-hallazgos" style="display:none;"></textarea>',
+      '  <div id="iad-rad-one-results" style="display:none;">',
+      '    <div class="iad-rad-one-editors">',
+      '      <div><label>Resultado primario IA</label><textarea id="iad-rad-one-primary-report" rows="18" readonly></textarea></div>',
+      '      <div><label>Resultado revisado</label><textarea id="iad-rad-one-revised-report" rows="18"></textarea></div>',
+      '    </div>',
+      '    <div class="iad-rad-one-actions">',
+      '      <button type="button" id="iad-rad-one-save" class="iad-btn iad-btn-primary">Guardar revisión</button>',
+      '      <button type="button" id="iad-rad-one-copy" class="iad-btn iad-btn-secondary">Copiar resultado revisado</button>',
+      '    </div>',
+      '  </div>',
+      '</div>'
+    ].join("");
+
+    var mainTextarea = findMainTextarea();
+    var form = document.getElementById("iad-main-work-form") || (mainTextarea && mainTextarea.closest("form"));
+    if (form) form.insertAdjacentElement("afterend", panel);
+    else document.body.appendChild(panel);
+
+    return panel;
+  }
+
+  function audioCount() {
+    var n = 0;
+    document.querySelectorAll("input[type='file']").forEach(function (input) {
+      if (input.files) n += input.files.length;
+    });
+    return n;
+  }
+
+  function waitForTextChange(textarea, before, timeoutMs) {
+    var start = Date.now();
+
+    return new Promise(function (resolve) {
+      function tick() {
+        var now = norm(textarea.value);
+        if (now && now !== before) return resolve(now);
+        if (Date.now() - start > timeoutMs) return resolve(norm(textarea.value));
+        setTimeout(tick, 700);
+      }
+      tick();
+    });
+  }
+
+  async function transcribeIfNeeded(textarea) {
+    if (audioCount() === 0) return norm(textarea.value);
+
+    var btn = document.getElementById("transcribeAllBtn");
+    if (!btn) return norm(textarea.value);
+
+    var before = norm(textarea.value);
+    setStatus("Transcribiendo audio...");
+
+    btn.click();
+
+    var after = await waitForTextChange(textarea, before, 120000);
+    return after || norm(textarea.value);
+  }
+
+  async function runOneStep(ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+
+    var btn = document.getElementById("iad-rad-one-analyze");
+    var textarea = findMainTextarea();
+
+    ensurePanel();
+
+    if (!textarea) {
+      alert("No encontré el cuadro principal de texto.");
+      return false;
+    }
+
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Procesando...";
+      }
+
+      var raw = await transcribeIfNeeded(textarea);
+      raw = norm(raw || textarea.value);
+
+      if (!raw) {
+        alert("No hay texto para analizar.");
+        return false;
+      }
+
+      window.__iadLastDictatedText = raw;
+
+      setStatus("Analizando plantilla...");
+
+      var abody = new URLSearchParams();
+      abody.set("texto_bruto", raw);
+
+      var aresp = await fetch("/iad/analizar-radiologia.json", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: abody.toString()
+      });
+
+      if (!aresp.ok) {
+        var atxt = await aresp.text();
+        throw new Error("Análisis HTTP " + aresp.status + ": " + atxt.slice(0, 400));
+      }
+
+      var analysis = await aresp.json();
+
+      if (analysis.ok === false) throw new Error(analysis.error || "No se detectó plantilla.");
+
+      var tpl = analysis.plantilla_sugerida || {};
+      var plantillaNombre = norm(tpl.nombre || "");
+      var plantillaId = norm(tpl.id || "");
+      var hallazgos = norm(analysis.hallazgos_radiologicos || raw);
+
+      if (!plantillaNombre && !plantillaId) throw new Error("No se detectó plantilla.");
+
+      setText("iad-rad-one-template-name", plantillaNombre || ("ID " + plantillaId));
+      setText("iad-rad-one-confidence", (tpl.confianza || "—") + (confidencePercent(tpl.confianza) ? " · " + confidencePercent(tpl.confianza) : ""));
+      setValue("iad-rad-one-template-id", plantillaId);
+      setValue("iad-rad-one-hallazgos", hallazgos);
+      show(document.getElementById("iad-rad-one-template-box"));
+
+      window.__iadLastAnalysis = analysis;
+
+      setStatus("Plantilla detectada. Generando informe...");
+
+      var gbody = new URLSearchParams();
+      gbody.set("plantilla_nombre", plantillaNombre);
+      gbody.set("plantilla_id", plantillaId);
+      gbody.set("hallazgos", hallazgos);
+
+      var gresp = await fetch("/iad/generar-informe-radiologico.json", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: gbody.toString()
+      });
+
+      if (!gresp.ok) {
+        var gtxt = await gresp.text();
+        throw new Error("Generación HTTP " + gresp.status + ": " + gtxt.slice(0, 400));
+      }
+
+      var generated = await gresp.json();
+
+      if (generated.ok === false) throw new Error(generated.error || "No se pudo generar informe.");
+
+      var report = generated.informe_final || "";
+
+      setValue("iad-rad-one-primary-report", report);
+      setValue("iad-rad-one-revised-report", report);
+      show(document.getElementById("iad-rad-one-results"));
+
+      window.__iadLastGenerated = generated;
+
+      setStatus("Informe generado en esta misma página.");
+      return false;
+    } catch (err) {
+      console.error(err);
+      setStatus("Error: " + err.message);
+      alert("Error: " + err.message);
+      return false;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Analizar radiología";
+      }
+    }
+  }
+
+  async function saveRevision(ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+
+    var plantillaNombre = norm(document.getElementById("iad-rad-one-template-name") && document.getElementById("iad-rad-one-template-name").textContent);
+    var plantillaId = getValue("iad-rad-one-template-id");
+    var hallazgos = getValue("iad-rad-one-hallazgos");
+    var primary = getValue("iad-rad-one-primary-report");
+    var revised = getValue("iad-rad-one-revised-report");
+    var textarea = findMainTextarea();
+
+    if (!primary || !revised) {
+      alert("No hay informe generado para guardar.");
+      return false;
+    }
+
+    var meta = {
+      url: window.location.href,
+      analysis: window.__iadLastAnalysis || null,
+      generated: window.__iadLastGenerated || null,
+      user_agent: navigator.userAgent,
+      saved_at_client: new Date().toISOString()
+    };
+
+    var body = new URLSearchParams();
+    body.set("ot_id", getOtId());
+    body.set("texto_dictado", window.__iadLastDictatedText || norm(textarea && textarea.value));
+    body.set("plantilla_nombre", plantillaNombre);
+    body.set("plantilla_id", plantillaId);
+    body.set("hallazgos_detectados", hallazgos);
+    body.set("resultado_primario", primary);
+    body.set("resultado_revisado", revised);
+    body.set("modelo", "gpt");
+    body.set("metadata_json", JSON.stringify(meta));
+    body.set("titulo", plantillaNombre);
+    body.set("modalidad", inferModalityFromTemplate(plantillaNombre));
+    body.set("tipo", inferTipoFromTemplate(plantillaNombre));
+    body.set("paciente", "");
+    body.set("edad", "");
+
+    setStatus("Guardando revisión...");
+
+    try {
+      var resp = await fetch("/iad/guardar-revision-y-historial-v3.json", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: body.toString()
+      });
+
+      if (!resp.ok) {
+        var txt = await resp.text();
+        throw new Error("Guardar HTTP " + resp.status + ": " + txt.slice(0, 400));
+      }
+
+      var data = await resp.json();
+      var sync = data.historial_sync || {};
+
+      if (sync.ok) setStatus("Revisión guardada. Historial actualizado: OT #" + (data.ot_id || sync.ot_id || ""));
+      else setStatus("Revisión guardada. Historial no sincronizado: " + (sync.reason || "sin detalle"));
+    } catch (err) {
+      console.error(err);
+      setStatus("Error al guardar: " + err.message);
+      alert("Error al guardar: " + err.message);
+    }
+
+    return false;
+  }
+
+  function copyRevised(ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+
+    var report = document.getElementById("iad-rad-one-revised-report");
+    if (!report) return false;
+
+    navigator.clipboard.writeText(report.value || "").then(function () {
+      setStatus("Resultado revisado copiado.");
+    }).catch(function () {
+      report.focus();
+      report.select();
+      document.execCommand("copy");
+      setStatus("Resultado revisado copiado.");
+    });
+
+    return false;
+  }
+
+  window.iadRunOneStep = runOneStep;
+
+  document.addEventListener("DOMContentLoaded", function () {
+    ensurePanel();
+
+    var btn = document.getElementById("iad-rad-one-analyze");
+    if (btn) {
+      btn.type = "button";
+      btn.onclick = runOneStep;
+    }
+
+    document.addEventListener("click", function (ev) {
+      var save = ev.target.closest("#iad-rad-one-save");
+      if (save) return saveRevision(ev);
+
+      var copy = ev.target.closest("#iad-rad-one-copy");
+      if (copy) return copyRevised(ev);
+    }, true);
+
+    console.log("[IAD] inline one-step runner activo");
+  });
+})();
+</script>

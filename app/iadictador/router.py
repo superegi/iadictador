@@ -531,6 +531,23 @@ async def create_ot(
     clarification_audio_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
 ):
+
+    # IAD_FIX_CREATE_OT_REPORT_TITLE_VALUE_V1
+    # Compatibilidad: algunos parches dejaron create_ot usando report_title_value
+    # sin definirlo. Lo resolvemos desde campos posibles del formulario.
+    try:
+        report_title_value
+    except NameError:
+        report_title_value = (
+            locals().get("report_title")
+            or locals().get("title")
+            or locals().get("titulo")
+            or locals().get("template_title")
+            or locals().get("plantilla_nombre")
+            or locals().get("template_name")
+            or locals().get("report_name")
+            or ""
+        )
     try:
         user = require_user(request, db)
     except PermissionError:
