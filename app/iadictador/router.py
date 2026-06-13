@@ -6702,3 +6702,237 @@ def iad_validacion_ot_latest_v5(ot_id: int, db = Depends(get_db)):
         },
     }
 
+
+# IAD_CLEAN_HISTORY_TRAINING_ENDPOINTS_V1
+# Endpoints limpios para reconstruir Historial y Training IA sin paneles contaminantes.
+
+def _iad_clean_json_loads_v1(value, fallback=None):
+    import json
+    if fallback is None:
+        fallback = {}
+    if value in (None, ""):
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return fallback
+
+
+def _iad_clean_text_v1(value):
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _iad_clean_dt_v1(value):
+    if value is None:
+        return ""
+    try:
+        return value.isoformat(sep=" ", timespec="seconds")
+    except Exception:
+        return str(value)
+
+
+def _iad_clean_getattr_v1(obj, names, default=""):
+    for name in names:
+        try:
+            if hasattr(obj, name):
+                v = getattr(obj, name)
+                if v not in (None, ""):
+                    return v
+        except Exception:
+            pass
+    return default
+
+
+def _iad_clean_workorder_item_v1(ot):
+    oid = _iad_clean_getattr_v1(ot, ["id"], "")
+    created = _iad_clean_getattr_v1(ot, ["created_at", "timestamp", "created", "fecha", "fecha_creacion"], "")
+    updated = _iad_clean_getattr_v1(ot, ["updated_at", "validated_at", "validado_en", "actualizado_en"], "")
+
+    initial = _iad_clean_getattr_v1(ot, ["final_report_initial", "informe_ia", "resultado_inicial", "resultado_ia"], "")
+    accepted = _iad_clean_getattr_v1(ot, ["final_report_accepted", "final_report", "resultado_final", "resultado", "informe_final"], "")
+    review = _iad_clean_getattr_v1(ot, ["review_report", "final_report_diff", "revision", "revisión", "review"], "")
+
+    return {
+        "id": oid,
+        "ot_id": oid,
+        "usuario": _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["username", "usuario", "user", "created_by", "user_id"], "")),
+        "created_at": _iad_clean_dt_v1(created),
+        "updated_at": _iad_clean_dt_v1(updated),
+        "tipo": _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["tipo", "type", "study_type", "exam_type"], "")),
+        "modalidad": _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["modalidad", "modality"], "")),
+        "titulo": _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["titulo", "title", "study_title"], "")),
+        "paciente": _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["paciente", "patient", "patient_name", "nombre_paciente"], "")),
+        "edad": _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["edad", "age", "patient_age"], "")),
+        "estado": _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["status", "estado", "state"], "")),
+        "plantilla": _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["template_name", "plantilla_nombre", "template", "plantilla"], "")),
+        "has_initial_report": bool(str(initial or "").strip()),
+        "has_final_report": bool(str(accepted or "").strip()),
+        "has_review": bool(str(review or "").strip()),
+        "open_url": f"/iad/ot/{oid}",
+    }
+
+
+@router.get("/iad/api/history/ots-clean.json")
+def iad_history_ots_clean_v1(limit: int = 300, db = Depends(get_db)):
+    limit = max(1, min(int(limit or 300), 1000))
+
+    try:
+        rows = db.query(WorkOrder).order_by(WorkOrder.id.desc()).limit(limit).all()
+    except Exception as e:
+        return {"ok": False, "error": str(e), "items": [], "count": 0}
+
+    items = [_iad_clean_workorder_item_v1(ot) for ot in rows]
+
+    return {
+        "ok": True,
+        "count": len(items),
+        "items": items,
+    }
+
+
+@router.get("/iad/api/history/ot/{ot_id}/clean.json")
+def iad_history_ot_clean_v1(ot_id: int, db = Depends(get_db)):
+    try:
+        ot = db.query(WorkOrder).filter(WorkOrder.id == int(ot_id)).first()
+    except Exception as e:
+        return {"ok": False, "error": str(e), "found": False}
+
+    if not ot:
+        return {"ok": True, "found": False, "ot_id": ot_id}
+
+    item = _iad_clean_workorder_item_v1(ot)
+
+    item["final_report_initial"] = _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["final_report_initial", "informe_ia", "resultado_inicial", "resultado_ia"], ""))
+    item["final_report_accepted"] = _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["final_report_accepted", "final_report", "resultado_final", "resultado", "informe_final"], ""))
+    item["review_report"] = _iad_clean_text_v1(_iad_clean_getattr_v1(ot, ["review_report", "final_report_diff", "revision", "revisión", "review"], ""))
+
+    return {"ok": True, "found": True, "item": item}
+
+
+def _iad_clean_db_cols_v1(db, table_name):
+    from sqlalchemy import text
+    try:
+        dialect = db.bind.dialect.name
+    except Exception:
+        dialect = "unknown"
+
+    try:
+        if dialect == "postgresql":
+            rows = db.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = :t
+                ORDER BY ordinal_position
+            """), {"t": table_name}).fetchall()
+            return [r[0] for r in rows]
+        rows = db.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+        return [r[1] for r in rows]
+    except Exception:
+        return []
+
+
+def _iad_clean_ensure_training_tables_v1(db):
+    try:
+        _iad_v5_ensure_tables(db)
+        return
+    except Exception:
+        pass
+    try:
+        _iad_v4_ensure_tables_and_ot_id(db)
+        return
+    except Exception:
+        pass
+    try:
+        _iad_validation_v3_ensure_tables(db)
+        return
+    except Exception:
+        pass
+
+
+@router.get("/iad/api/training/dataset-clean.json")
+def iad_training_dataset_clean_v1(limit: int = 200, db = Depends(get_db)):
+    from sqlalchemy import text
+
+    _iad_clean_ensure_training_tables_v1(db)
+
+    limit = max(1, min(int(limit or 200), 1000))
+    cols = _iad_clean_db_cols_v1(db, "iad_training_corrections")
+
+    if not cols:
+        return {"ok": True, "count": 0, "items": [], "columns": []}
+
+    wanted = [
+        "id",
+        "created_at",
+        "ot_id",
+        "usuario",
+        "template_name",
+        "dictado_original",
+        "transcripcion",
+        "clinical_json",
+        "informe_ia",
+        "informe_corregido",
+        "diferencias_detectadas",
+        "modelo_usado",
+        "metadata_json",
+        "source",
+    ]
+
+    select_cols = [c for c in wanted if c in cols]
+    if "id" not in select_cols:
+        select_cols.insert(0, "id")
+
+    sql = "SELECT " + ", ".join(select_cols) + " FROM iad_training_corrections ORDER BY id DESC LIMIT :limit"
+    rows = db.execute(text(sql), {"limit": limit}).fetchall()
+
+    items = []
+    for row in rows:
+        raw = dict(zip(select_cols, row))
+
+        clinical = _iad_clean_json_loads_v1(raw.get("clinical_json"), fallback={})
+        metadata = _iad_clean_json_loads_v1(raw.get("metadata_json"), fallback={})
+
+        tags = []
+        conflict_points = []
+
+        if isinstance(clinical, dict):
+            for key in ["tags", "hallazgos", "findings", "hallazgos_estructurados"]:
+                val = clinical.get(key)
+                if isinstance(val, list):
+                    tags.extend(val)
+
+        if isinstance(metadata, dict):
+            for key in ["advertencias", "warnings", "posibles_omisiones", "conflictos", "conflict_points"]:
+                val = metadata.get(key)
+                if isinstance(val, list):
+                    conflict_points.extend([str(x) for x in val if str(x).strip()])
+
+        items.append({
+            "id": raw.get("id"),
+            "created_at": _iad_clean_dt_v1(raw.get("created_at")),
+            "ot_id": raw.get("ot_id"),
+            "usuario": raw.get("usuario") or "",
+            "texto_transcrito_literal": raw.get("transcripcion") or raw.get("dictado_original") or "",
+            "tags_importantes_reconocidos": tags,
+            "plantilla_a_utilizar": raw.get("template_name") or "",
+            "propuesta_ia": raw.get("informe_ia") or "",
+            "puntos_conflictivos_detectados": conflict_points,
+            "version_final_usuario": raw.get("informe_corregido") or "",
+            "diff": raw.get("diferencias_detectadas") or "",
+            "modelo": raw.get("modelo_usado") or "",
+            "source": raw.get("source") or "",
+            "metadata": metadata,
+            "clinical_json": clinical,
+        })
+
+    return {
+        "ok": True,
+        "count": len(items),
+        "items": items,
+        "columns": select_cols,
+    }
+

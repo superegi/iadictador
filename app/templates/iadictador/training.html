@@ -1,18 +1,317 @@
 {% extends "iadictador/base.html" %}
 
-{% block title %}Training IA{% endblock %}
+{% block title %}IA Dictador - Training IA{% endblock %}
 
 {% block content %}
-<div class="topbar">
-  <h2>Training IA</h2>
+<!-- IAD_CLEAN_TRAINING_PAGE_V1 -->
+<style>
+  #iad-validation-history-panel-v3,
+  #iad-training-corrections-panel-v2,
+  #iad-training-corrections-panel-v3,
+  #iad-validation-history-panel-v4 {
+    display: none !important;
+  }
+
+  .iad-clean-page {
+    max-width: 100%;
+  }
+
+  .iad-clean-card {
+    border: 1px solid rgba(148, 163, 184, .22);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, .88);
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+
+  .iad-clean-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .iad-clean-title {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  .iad-clean-muted {
+    color: #9fb0c4;
+    font-size: .9rem;
+  }
+
+  .iad-clean-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .iad-clean-actions button,
+  .iad-clean-actions a {
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .iad-clean-actions button {
+    background: #38bdf8;
+    color: #06111f;
+  }
+
+  .iad-clean-actions .danger {
+    background: #dc2626;
+    color: white;
+  }
+
+  .iad-clean-actions a {
+    background: #334155;
+    color: #e5edf7;
+  }
+
+  .iad-clean-input {
+    background: #0b1625;
+    color: #e5edf7;
+    border: 1px solid rgba(148, 163, 184, .24);
+    border-radius: 10px;
+    padding: 8px 10px;
+    min-width: 320px;
+  }
+
+  .iad-train-item {
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+
+  .iad-train-head {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 10px;
+    background: rgba(30, 41, 59, .7);
+  }
+
+  .iad-badge {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 3px 8px;
+    background: #1e293b;
+    color: #dbeafe;
+    font-size: .78rem;
+  }
+
+  .iad-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  @media (max-width: 900px) {
+    .iad-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .iad-box {
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 10px;
+    padding: 10px;
+    background: #0b1625;
+  }
+
+  .iad-box h4 {
+    margin: 0 0 8px 0;
+    color: #cbd5e1;
+  }
+
+  pre.iad-pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: .84rem;
+    max-height: 360px;
+    overflow: auto;
+  }
+</style>
+
+<div class="iad-clean-page">
+  <section class="iad-clean-card">
+    <div class="iad-clean-header">
+      <div>
+        <h1 class="iad-clean-title">Training IA</h1>
+        <div class="iad-clean-muted">
+          Dataset estructurado para enseñar a la IA: transcripción, tags, plantilla, propuesta, conflictos, versión final y diff.
+        </div>
+      </div>
+      <div class="iad-clean-actions">
+        <input id="iadTrainSearch" class="iad-clean-input" type="search" placeholder="Buscar plantilla, texto, OT, conflicto..." />
+        <button type="button" id="iadTrainRefresh">Actualizar</button>
+        <button type="button" id="iadTrainDownloadSelected">Descargar filtrados JSONL</button>
+        <a href="/iad/api/training/corrections/export.jsonl" target="_blank" rel="noopener">Exportar crudo JSONL</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="iad-clean-card">
+    <div class="iad-clean-muted" id="iadTrainCount">Cargando...</div>
+    <div id="iadTrainBody" style="margin-top:10px">Cargando...</div>
+  </section>
 </div>
 
-<div class="card">
-  <h3>Muestras input/output</h3>
-  <p class="muted">
-    Cada vez que guardas una revisión desde Área de trabajo, se conserva el dictado original y el informe final limpio.
-  </p>
-</div>
+<script>
+(function () {
+  "use strict";
 
-<script src="/static/iad_saved_records_panel.js?v=20260613012516"></script>
+  const state = { items: [], filtered: [] };
+
+  function esc(s) {
+    s = s === null || s === undefined ? "" : String(s);
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function norm(s) {
+    return (s === null || s === undefined ? "" : String(s)).toLowerCase();
+  }
+
+  function asText(v) {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "string") return v;
+    try { return JSON.stringify(v, null, 2); } catch (e) { return String(v); }
+  }
+
+  function filterItems() {
+    const q = norm(document.getElementById("iadTrainSearch")?.value || "").trim();
+    state.filtered = state.items.filter(item => {
+      if (!q) return true;
+      const hay = [
+        item.id,
+        item.ot_id,
+        item.created_at,
+        item.plantilla_a_utilizar,
+        item.modelo,
+        item.texto_transcrito_literal,
+        item.tags_importantes_reconocidos,
+        item.propuesta_ia,
+        item.puntos_conflictivos_detectados,
+        item.version_final_usuario,
+        item.diff
+      ].map(asText).map(norm).join(" ");
+      return hay.includes(q);
+    });
+  }
+
+  function render() {
+    filterItems();
+
+    const body = document.getElementById("iadTrainBody");
+    const count = document.getElementById("iadTrainCount");
+
+    count.textContent = `Total: ${state.items.length} · Mostrando: ${state.filtered.length}`;
+
+    if (!state.filtered.length) {
+      body.innerHTML = "No hay ejemplos de training para mostrar.";
+      return;
+    }
+
+    body.innerHTML = state.filtered.map(item => `
+      <article class="iad-train-item">
+        <div class="iad-train-head">
+          <span class="iad-badge">#${esc(item.id)}</span>
+          <span class="iad-badge">OT #${esc(item.ot_id || "—")}</span>
+          <span class="iad-badge">${esc(item.created_at)}</span>
+          <span class="iad-badge">Plantilla: ${esc(item.plantilla_a_utilizar || "—")}</span>
+          <span class="iad-badge">Modelo: ${esc(item.modelo || "—")}</span>
+        </div>
+
+        <div class="iad-grid">
+          <div class="iad-box">
+            <h4>Texto transcrito literal</h4>
+            <pre class="iad-pre">${esc(item.texto_transcrito_literal)}</pre>
+          </div>
+
+          <div class="iad-box">
+            <h4>Tags importantes reconocidos</h4>
+            <pre class="iad-pre">${esc(asText(item.tags_importantes_reconocidos))}</pre>
+          </div>
+
+          <div class="iad-box">
+            <h4>Plantilla a utilizar</h4>
+            <pre class="iad-pre">${esc(item.plantilla_a_utilizar)}</pre>
+          </div>
+
+          <div class="iad-box">
+            <h4>Puntos conflictivos detectados</h4>
+            <pre class="iad-pre">${esc(asText(item.puntos_conflictivos_detectados))}</pre>
+          </div>
+
+          <div class="iad-box">
+            <h4>Propuesta de la IA</h4>
+            <pre class="iad-pre">${esc(item.propuesta_ia)}</pre>
+          </div>
+
+          <div class="iad-box">
+            <h4>Versión final guardada por el usuario</h4>
+            <pre class="iad-pre">${esc(item.version_final_usuario)}</pre>
+          </div>
+        </div>
+
+        <div class="iad-box" style="margin:10px">
+          <h4>Diff</h4>
+          <pre class="iad-pre">${esc(item.diff)}</pre>
+        </div>
+      </article>
+    `).join("");
+  }
+
+  async function load() {
+    const body = document.getElementById("iadTrainBody");
+    body.textContent = "Cargando...";
+    try {
+      const res = await fetch("/iad/api/training/dataset-clean.json?limit=300");
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "No se pudo cargar");
+      state.items = data.items || [];
+      render();
+    } catch (e) {
+      body.textContent = "Error: " + (e.message || e);
+    }
+  }
+
+  function downloadFiltered() {
+    filterItems();
+    const lines = state.filtered.map(item => JSON.stringify(item));
+    const blob = new Blob([lines.join("\n") + (lines.length ? "\n" : "")], {type: "application/x-ndjson"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "iad_training_filtrado.jsonl";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  document.getElementById("iadTrainRefresh")?.addEventListener("click", load);
+  document.getElementById("iadTrainSearch")?.addEventListener("input", render);
+  document.getElementById("iadTrainDownloadSelected")?.addEventListener("click", downloadFiltered);
+
+  load();
+
+  setInterval(function () {
+    document.getElementById("iad-validation-history-panel-v3")?.remove();
+    document.getElementById("iad-training-corrections-panel-v2")?.remove();
+    document.getElementById("iad-validation-history-panel-v4")?.remove();
+  }, 500);
+})();
+</script>
 {% endblock %}

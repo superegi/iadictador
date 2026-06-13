@@ -1,49 +1,258 @@
 {% extends "iadictador/base.html" %}
-{% block title %}Historial{% endblock %}
+
+{% block title %}IA Dictador - Historial{% endblock %}
+
 {% block content %}
+<!-- IAD_CLEAN_HISTORY_PAGE_V1 -->
+<style>
+  #iad-validation-history-panel-v3,
+  #iad-training-corrections-panel-v2,
+  #iad-training-corrections-panel-v3,
+  #iad-validation-history-panel-v4 {
+    display: none !important;
+  }
 
-<div class="panel">
-  <h3>Historial</h3>
-  <p class="muted">
-    Las OT históricas son trazabilidad. Si necesita modificar una, luego agregaremos botón para duplicar y crear una nueva OT.
-  </p>
+  .iad-clean-page {
+    max-width: 100%;
+  }
+
+  .iad-clean-card {
+    border: 1px solid rgba(148, 163, 184, .22);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, .88);
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+
+  .iad-clean-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .iad-clean-title {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  .iad-clean-muted {
+    color: #9fb0c4;
+    font-size: .9rem;
+  }
+
+  .iad-clean-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .iad-clean-actions button,
+  .iad-clean-actions a {
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .iad-clean-actions button {
+    background: #38bdf8;
+    color: #06111f;
+  }
+
+  .iad-clean-actions a {
+    background: #334155;
+    color: #e5edf7;
+  }
+
+  .iad-clean-input {
+    background: #0b1625;
+    color: #e5edf7;
+    border: 1px solid rgba(148, 163, 184, .24);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+
+  .iad-clean-table-wrap {
+    overflow: auto;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 12px;
+  }
+
+  table.iad-clean-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .9rem;
+  }
+
+  .iad-clean-table th,
+  .iad-clean-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(148, 163, 184, .16);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+
+  .iad-clean-table th {
+    color: #cbd5e1;
+    font-weight: 700;
+    background: rgba(15, 23, 42, .8);
+    position: sticky;
+    top: 0;
+  }
+
+  .iad-clean-badge {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 3px 8px;
+    background: #1e293b;
+    color: #dbeafe;
+    font-size: .78rem;
+  }
+
+  .iad-clean-link {
+    color: #7dd3fc;
+    font-weight: 700;
+    text-decoration: none;
+  }
+</style>
+
+<div class="iad-clean-page">
+  <section class="iad-clean-card">
+    <div class="iad-clean-header">
+      <div>
+        <h1 class="iad-clean-title">Historial</h1>
+        <div class="iad-clean-muted">
+          Tabla operativa de OTs. Desde aquí se abre cada hoja de trabajo.
+        </div>
+      </div>
+      <div class="iad-clean-actions">
+        <input id="iadHistSearch" class="iad-clean-input" type="search" placeholder="Buscar OT, paciente, modalidad, estado..." />
+        <button type="button" id="iadHistRefresh">Actualizar</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="iad-clean-card">
+    <div class="iad-clean-header" style="margin-bottom:10px">
+      <div class="iad-clean-muted" id="iadHistCount">Cargando...</div>
+    </div>
+
+    <div class="iad-clean-table-wrap">
+      <table class="iad-clean-table">
+        <thead>
+          <tr>
+            <th># OT</th>
+            <th>Usuario</th>
+            <th>Fecha</th>
+            <th>Tipo</th>
+            <th>Modalidad</th>
+            <th>Título</th>
+            <th>Paciente</th>
+            <th>Edad</th>
+            <th>Estado</th>
+            <th>Informe</th>
+            <th>Revisión</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="iadHistBody">
+          <tr><td colspan="12">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
 
-<div class="panel">
-  <table>
-    <thead>
-      <tr>
-        <th># OT</th>
-        {% if admin_view %}<th>Usuario</th>{% endif %}
-        <th>Timestamp</th>
-        <th>Tipo</th>
-        <th>Modalidad</th>
-        <th>Título</th>
-        <th>Paciente</th>
-        <th>Edad</th>
-        <th>Estado</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for ot in ots %}
-      <tr>
-        <td>{{ ot.ot_user_number }}</td>
-        {% if admin_view %}<td>{{ ot.user.username if ot.user else "" }}</td>{% endif %}
-        <td>{{ ot.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
-        <td>{{ ot.report_type or "" }}</td>
-        <td>{{ ot.modality or "" }}</td>
-        <td>{{ ot.report_title or "" }}</td>
-        <td>{{ (ot.patient_last_name or "") }} {{ (ot.patient_first_name or "") }}</td>
-        <td>{{ ot.patient_age or "" }}</td>
-        <td>{{ ot.status }}</td>
-        <td><a href="/iad/ot/{{ ot.id }}">Abrir</a></td>
-      </tr>
-      {% else %}
-      <tr><td colspan="10">Sin OT guardadas.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<script>
+(function () {
+  "use strict";
 
+  const state = { items: [], filtered: [] };
+
+  function esc(s) {
+    s = s === null || s === undefined ? "" : String(s);
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function norm(s) {
+    return (s === null || s === undefined ? "" : String(s)).toLowerCase();
+  }
+
+  function yesNo(v) {
+    return v ? "<span class='iad-clean-badge'>sí</span>" : "<span class='iad-clean-badge'>—</span>";
+  }
+
+  function render() {
+    const body = document.getElementById("iadHistBody");
+    const count = document.getElementById("iadHistCount");
+    if (!body) return;
+
+    const q = norm(document.getElementById("iadHistSearch")?.value || "").trim();
+
+    state.filtered = state.items.filter(item => {
+      if (!q) return true;
+      const hay = [
+        item.id, item.usuario, item.created_at, item.tipo, item.modalidad,
+        item.titulo, item.paciente, item.edad, item.estado, item.plantilla
+      ].map(norm).join(" ");
+      return hay.includes(q);
+    });
+
+    count.textContent = `Total: ${state.items.length} · Mostrando: ${state.filtered.length}`;
+
+    if (!state.filtered.length) {
+      body.innerHTML = "<tr><td colspan='12'>No hay OTs para mostrar.</td></tr>";
+      return;
+    }
+
+    body.innerHTML = state.filtered.map(item => `
+      <tr>
+        <td>${esc(item.id)}</td>
+        <td>${esc(item.usuario)}</td>
+        <td>${esc(item.created_at)}</td>
+        <td>${esc(item.tipo)}</td>
+        <td>${esc(item.modalidad)}</td>
+        <td>${esc(item.titulo)}</td>
+        <td>${esc(item.paciente)}</td>
+        <td>${esc(item.edad)}</td>
+        <td><span class="iad-clean-badge">${esc(item.estado || "—")}</span></td>
+        <td>${yesNo(item.has_final_report)}</td>
+        <td>${yesNo(item.has_review)}</td>
+        <td><a class="iad-clean-link" href="${esc(item.open_url)}">Abrir</a></td>
+      </tr>
+    `).join("");
+  }
+
+  async function load() {
+    const body = document.getElementById("iadHistBody");
+    body.innerHTML = "<tr><td colspan='12'>Cargando...</td></tr>";
+    try {
+      const res = await fetch("/iad/api/history/ots-clean.json?limit=500");
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "No se pudo cargar");
+      state.items = data.items || [];
+      render();
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan='12'>Error: ${esc(e.message || e)}</td></tr>`;
+    }
+  }
+
+  document.getElementById("iadHistRefresh")?.addEventListener("click", load);
+  document.getElementById("iadHistSearch")?.addEventListener("input", render);
+
+  load();
+
+  setInterval(function () {
+    document.getElementById("iad-validation-history-panel-v3")?.remove();
+    document.getElementById("iad-training-corrections-panel-v2")?.remove();
+    document.getElementById("iad-validation-history-panel-v4")?.remove();
+  }, 500);
+})();
+</script>
 {% endblock %}
