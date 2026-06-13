@@ -1,0 +1,43 @@
+version: 1
+name: Ecografía Abdominal - reglas de informe
+scope:
+  template_names:
+    - Ecografía Abdominal
+    - Ecografia Abdominal
+    - Eco Abdomen
+    - Ultrasonido Abdominal
+
+hard_rules:
+  - id: no_placeholders
+    instruction: "Nunca dejar [contenido], xxxxx, marcas de sección ni alternativas de plantilla en el informe final."
+
+  - id: no_invented_nephrolithiasis
+    instruction: "No escribir nefrolitiasis ni litiasis renal salvo que el dictado o los hallazgos estructurados la mencionen explícitamente."
+
+  - id: gallbladder_lithiasis
+    instruction: "Si la vesícula está presente y tiene múltiples litiasis, escribir una sola frase: Vesícula biliar en repleción parcial, de pared fina. Presenta múltiples litiasis en su interior de hasta {size}."
+
+  - id: hepatic_steatosis
+    instruction: "Si el hígado tiene aumento difuso de ecogenicidad compatible con esteatosis, escribir: Hígado de morfología normal, con aumento difuso de su ecogenicidad. Sin lesiones focales en las imágenes visibles."
+
+  - id: common_bile_duct_measure
+    instruction: "Si se dicta medida de vía biliar/colédoco y no hay dilatación, conservarla en el cuerpo: La vía biliar a nivel del colédoco, alcanza {size}."
+
+  - id: kidney_sizes
+    instruction: "Si se dictan tamaños renales normales, conservarlos en cuerpo del informe."
+
+  - id: impression_conceptual
+    instruction: "La impresión diagnóstica debe ser conceptual, sin medidas y sin guiones."
+
+  - id: normal_measurements_not_impression
+    instruction: "No agregar a impresión diagnóstica medidas normales de colédoco ni tamaños renales."
+
+conceptual_impression_map:
+  cholelithiasis_multiple: "Colelitiasis múltiple."
+  hepatic_steatosis: "Esteatosis hepática."
+
+negative_impression_rules:
+  - "No concluir nefrolitiasis si solo se dictaron tamaños renales."
+  - "No concluir vía biliar normal."
+  - "No concluir tamaños renales normales."
+  - "No concluir vesícula presente; solo concluir colelitiasis si hay litiasis."

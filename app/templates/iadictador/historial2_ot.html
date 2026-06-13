@@ -1,0 +1,85 @@
+{% extends "iadictador/base.html" %}
+{% block title %}IA Dictador - OT {{ ot_id }}{% endblock %}
+
+{% block content %}
+<style>
+  .iad2-card{border:1px solid rgba(148,163,184,.24);border-radius:14px;background:#101d2d;padding:14px;margin-bottom:14px}
+  .iad2-title{margin:0;font-size:1.25rem}
+  .iad2-muted{color:#9fb0c4;font-size:.9rem}
+  .iad2-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  @media(max-width:900px){.iad2-grid{grid-template-columns:1fr}}
+  .iad2-field{border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0b1625;padding:10px}
+  .iad2-label{color:#9fb0c4;font-size:.78rem;margin-bottom:4px}
+  .iad2-value{white-space:pre-wrap}
+  .iad2-pre{white-space:pre-wrap;word-break:break-word;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0b1625;padding:12px;min-height:70px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.88rem}
+  .iad2-link{color:#7dd3fc;font-weight:700;text-decoration:none}
+  .iad2-table{width:100%;border-collapse:collapse;font-size:.88rem}
+  .iad2-table td,.iad2-table th{border-bottom:1px solid rgba(148,163,184,.16);padding:7px 8px;text-align:left;vertical-align:top}
+  .iad2-table th{color:#cbd5e1}
+</style>
+
+<section class="iad2-card">
+  <h1 class="iad2-title">OT #{{ ot_id }}</h1>
+  <div class="iad2-muted">Versión no editable de la hoja de trabajo generada.</div>
+  <div style="margin-top:10px"><a class="iad2-link" href="/iad/historial2">← Volver a Historial2</a></div>
+</section>
+
+{% if not item %}
+<section class="iad2-card">No se encontró la OT.</section>
+{% else %}
+<section class="iad2-card">
+  <div class="iad2-grid">
+    <div class="iad2-field"><div class="iad2-label">Hora local ajustada</div><div class="iad2-value">{{ item.hora }}</div></div>
+    <div class="iad2-field"><div class="iad2-label">Hora cruda BD</div><div class="iad2-value">{{ item.hora_raw }}</div></div>
+    <div class="iad2-field"><div class="iad2-label">Usuario</div><div class="iad2-value">{{ item.usuario }}</div></div>
+    <div class="iad2-field"><div class="iad2-label">Modalidad</div><div class="iad2-value">{{ item.modalidad }}</div></div>
+    <div class="iad2-field"><div class="iad2-label">Nombre estudio</div><div class="iad2-value">{{ item.nombre_estudio or item.titulo }}</div></div>
+    <div class="iad2-field"><div class="iad2-label">Paciente</div><div class="iad2-value">{{ item.paciente }}</div></div>
+    <div class="iad2-field"><div class="iad2-label">Edad</div><div class="iad2-value">{{ item.edad }}</div></div>
+    <div class="iad2-field"><div class="iad2-label">Estado</div><div class="iad2-value">{{ item.estado }}</div></div>
+    <div class="iad2-field"><div class="iad2-label">Plantilla</div><div class="iad2-value">{{ item.plantilla }}</div></div>
+  </div>
+</section>
+
+<section class="iad2-card">
+  <h2>Texto / dictado / transcripción</h2>
+  <div class="iad2-pre">{{ item.texto_origen }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Extracción IA</h2>
+  <div class="iad2-pre">{{ item.extraccion_ia }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Propuesta IA</h2>
+  <div class="iad2-pre">{{ item.propuesta_ia }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Revisión / diff</h2>
+  <div class="iad2-pre">{{ item.revision }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Resultado final validado</h2>
+  <div class="iad2-pre">{{ item.resultado_final }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Campos originales de la OT</h2>
+  <div class="iad2-muted">Fallback de auditoría: muestra todos los campos no vacíos que quedaron realmente guardados en WorkOrder.</div>
+  <table class="iad2-table" style="margin-top:10px">
+    <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
+    <tbody>
+      {% for f in item.raw_fields %}
+      <tr>
+        <td>{{ f.campo }}</td>
+        <td><pre class="iad2-pre" style="min-height:0">{{ f.valor }}</pre></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

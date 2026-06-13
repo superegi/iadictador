@@ -3627,3 +3627,446 @@
   window.iadCleanJsonTranscriptionV2 = cleanVisibleBlocks;
 })();
 
+
+// IAD_WORK_DEDUPE_RESULTS_INLINE_V2
+(function () {
+  "use strict";
+
+  if (window.__iadWorkDedupeResultsInlineV2) return;
+  window.__iadWorkDedupeResultsInlineV2 = true;
+
+  function norm(s) {
+    return (s === null || s === undefined ? "" : String(s))
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function isWorkPage() {
+    return /\/iad\/trabajo/.test(window.location.pathname || "");
+  }
+
+  function isVisible(el) {
+    if (!el) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden") return false;
+    return true;
+  }
+
+  function isTooBig(el) {
+    if (!el) return true;
+    if (el === document.body || el === document.documentElement) return true;
+    if (el.tagName === "MAIN") return true;
+
+    const t = norm(el.textContent || "");
+    if (
+      t.includes("audio principal") &&
+      t.includes("informacion principal para el informe") &&
+      t.includes("informe final editable")
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function titleText(el) {
+    const h = el.querySelector(":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > header h1, :scope > header h2, :scope > header h3");
+    return norm(h ? h.textContent : "");
+  }
+
+  function hasFinalReportTextarea(el) {
+    if (!el) return false;
+
+    if (el.querySelector("#iad-real-final-report")) return true;
+    if (el.querySelector("#finalReport")) return true;
+
+    return Array.from(el.querySelectorAll("textarea")).some(function (t) {
+      const v = norm(t.value || t.textContent || "");
+      return v.includes("impresion diagnostica");
+    });
+  }
+
+  function isFinalPanel(el) {
+    if (!el || isTooBig(el) || !isVisible(el)) return false;
+
+    if (el.id === "iad-real-final-panel") return true;
+
+    const t = norm(el.textContent || "");
+    const title = titleText(el);
+
+    if (hasFinalReportTextarea(el) && t.includes("informe final editable")) return true;
+    if (title.includes("informe final editable") && el.querySelector("textarea")) return true;
+
+    return false;
+  }
+
+  function isOldAudioFirstPanel(el) {
+    if (!el || isTooBig(el) || !isVisible(el)) return false;
+
+    const t = norm(el.textContent || "");
+    const title = titleText(el);
+
+    if (title.includes("resultado audio-first")) return true;
+
+    if (
+      t.includes("resultado audio-first") &&
+      t.includes("transcripcion devuelta") &&
+      t.includes("impresion diagnostica")
+    ) {
+      return true;
+    }
+
+    if (
+      t.startsWith("audio-first completo") &&
+      t.includes("plantilla") &&
+      t.includes("informe final")
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function panelScore(el) {
+    let s = 0;
+    const t = norm(el.textContent || "");
+
+    if (el.id === "iad-real-final-panel") s += 300;
+    if (el.querySelector("#iad-real-final-report")) s += 250;
+    if (hasFinalReportTextarea(el)) s += 150;
+    if (t.includes("guardar validacion")) s += 70;
+    if (t.includes("copiar informe final")) s += 60;
+    if (t.includes("plantilla") && t.includes("confianza") && t.includes("metodo")) s += 20;
+
+    if (t.includes("[contenido]")) s -= 100;
+    if (t.includes("xxxxxxxx")) s -= 100;
+    if (t.includes("hallazgos positivos estructurados aplicados al informe")) s -= 80;
+
+    return s;
+  }
+
+  function domOrder(el) {
+    return Array.prototype.indexOf.call(document.querySelectorAll("section, article, form, div"), el);
+  }
+
+  function hide(el, why) {
+    if (!el || isTooBig(el)) return;
+    if (el.dataset.iadDedupeKeep === "1") return;
+
+    el.dataset.iadDedupeHidden = why || "duplicate";
+    el.style.display = "none";
+    el.setAttribute("aria-hidden", "true");
+  }
+
+  function keep(el) {
+    if (!el) return;
+    el.dataset.iadDedupeKeep = "1";
+    if (el.dataset.iadDedupeHidden) {
+      delete el.dataset.iadDedupeHidden;
+      el.style.display = "";
+      el.removeAttribute("aria-hidden");
+    }
+  }
+
+  function cleanup() {
+    if (!isWorkPage()) {
+      return { ok: false, reason: "not-work-page" };
+    }
+
+    const nodes = Array.from(document.querySelectorAll("section, article, form, div"));
+    const finalPanels = nodes.filter(isFinalPanel);
+    const oldPanels = nodes.filter(isOldAudioFirstPanel);
+
+    let keptFinal = null;
+
+    if (finalPanels.length) {
+      keptFinal = finalPanels.slice().sort(function (a, b) {
+        const scoreDelta = panelScore(a) - panelScore(b);
+        if (scoreDelta !== 0) return scoreDelta;
+        return domOrder(a) - domOrder(b);
+      }).pop();
+
+      keep(keptFinal);
+
+      finalPanels.forEach(function (el) {
+        if (el !== keptFinal) hide(el, "duplicate-final-panel");
+      });
+    }
+
+    if (keptFinal) {
+      oldPanels.forEach(function (el) {
+        if (el !== keptFinal && !el.contains(keptFinal) && !keptFinal.contains(el)) {
+          hide(el, "old-audio-first-panel");
+        }
+      });
+    } else if (oldPanels.length > 1) {
+      const keptOld = oldPanels[oldPanels.length - 1];
+      keep(keptOld);
+      oldPanels.forEach(function (el) {
+        if (el !== keptOld) hide(el, "duplicate-old-audio-first-panel");
+      });
+    }
+
+    // Ocultar textareas finales sueltas que no estén dentro del panel conservado.
+    if (keptFinal) {
+      Array.from(document.querySelectorAll("textarea")).forEach(function (ta) {
+        const v = norm(ta.value || ta.textContent || "");
+        if (!v.includes("impresion diagnostica") && ta.id !== "finalReport" && ta.id !== "iad-real-final-report") return;
+        if (keptFinal.contains(ta)) return;
+
+        const block = ta.closest("section, article, form, div");
+        if (block && !keptFinal.contains(block) && !isTooBig(block)) {
+          hide(block, "duplicate-final-textarea");
+        }
+      });
+    }
+
+    const result = {
+      ok: true,
+      finalPanels: finalPanels.length,
+      oldPanels: oldPanels.length,
+      keptFinal: !!keptFinal
+    };
+
+    console.log("[IAD dedupe V2]", result);
+    return result;
+  }
+
+  window.iadWorkDedupeResultsV1 = cleanup;
+  window.iadWorkDedupeResultsV2 = cleanup;
+
+  let timer = null;
+  function schedule() {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function () {
+      timer = null;
+      cleanup();
+    }, 120);
+  }
+
+  function install() {
+    if (!isWorkPage()) return;
+
+    setTimeout(cleanup, 200);
+    setTimeout(cleanup, 800);
+    setTimeout(cleanup, 1600);
+    setTimeout(cleanup, 3000);
+
+    try {
+      const obs = new MutationObserver(schedule);
+      obs.observe(document.documentElement || document.body, { childList: true, subtree: true });
+    } catch (e) {}
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", install);
+  } else {
+    install();
+  }
+
+  const previousFetch = window.fetch;
+  if (typeof previousFetch === "function" && !previousFetch.__iadDedupeInlineV2) {
+    const wrapped = async function () {
+      const res = await previousFetch.apply(this, arguments);
+      setTimeout(cleanup, 100);
+      setTimeout(cleanup, 700);
+      setTimeout(cleanup, 1600);
+      return res;
+    };
+    wrapped.__iadDedupeInlineV2 = true;
+    window.fetch = wrapped;
+  }
+})();
+
+
+// IAD_EXTRACTION_SUMMARY_PANEL_V1
+(function () {
+  "use strict";
+
+  if (window.__iadExtractionSummaryPanelV1) return;
+  window.__iadExtractionSummaryPanelV1 = true;
+
+  if (!/\/iad\/trabajo/.test(window.location.pathname || "")) return;
+
+  function txt(v) {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "string") return v.trim();
+    try { return JSON.stringify(v, null, 2); } catch (e) { return String(v).trim(); }
+  }
+
+  function esc(s) {
+    s = txt(s);
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function toList(v) {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.map(txt).filter(Boolean);
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (!t) return [];
+      try {
+        const p = JSON.parse(t);
+        if (Array.isArray(p)) return p.map(txt).filter(Boolean);
+      } catch (e) {}
+      return [t];
+    }
+    return [txt(v)].filter(Boolean);
+  }
+
+  function extract(data) {
+    data = data || {};
+
+    const resumen = data.resumen_extraccion || {};
+
+    const literal =
+      txt(resumen.texto_transcrito_literal) ||
+      txt(data.texto_transcrito_literal) ||
+      txt(data.transcripcion) ||
+      txt(data.transcription) ||
+      txt(data.raw_audio_first_text) ||
+      "";
+
+    let tags = [];
+    tags = tags.concat(toList(resumen.tags_especificos));
+    tags = tags.concat(toList(data.tags_especificos_ia));
+
+    if (Array.isArray(data.hallazgos_estructurados)) {
+      data.hallazgos_estructurados.forEach(function (h) {
+        if (!h) return;
+        if (typeof h === "string") {
+          tags.push(h);
+          return;
+        }
+        if (typeof h === "object") {
+          const parts = [];
+          ["organo_o_region", "region", "organo", "lateralidad", "hallazgo", "finding", "medida", "size", "interpretacion"].forEach(function (k) {
+            if (h[k]) parts.push(String(h[k]));
+          });
+          if (parts.length) tags.push(parts.join(" · "));
+        }
+      });
+    }
+
+    const seen = {};
+    tags = tags.map(txt).filter(Boolean).filter(function (x) {
+      const k = x.toLowerCase();
+      if (seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+
+    let warnings = [];
+    warnings = warnings.concat(toList(resumen.advertencias));
+    warnings = warnings.concat(toList(data.advertencias_visibles));
+    warnings = warnings.concat(toList(data.advertencias));
+    warnings = warnings.concat(toList(data.warnings));
+    warnings = warnings.concat(toList(data.posibles_omisiones));
+
+    const seenW = {};
+    warnings = warnings.map(txt).filter(Boolean).filter(function (x) {
+      const k = x.toLowerCase();
+      if (seenW[k]) return false;
+      seenW[k] = true;
+      return true;
+    });
+
+    return { literal, tags, warnings };
+  }
+
+  function findHost() {
+    return document.getElementById("iad-real-final-panel")
+      || document.querySelector("section:has(#iad-real-final-report)")
+      || document.querySelector("main")
+      || document.body;
+  }
+
+  function render(data) {
+    const info = extract(data);
+
+    if (!info.literal && !info.tags.length && !info.warnings.length) return;
+
+    let panel = document.getElementById("iad-extraction-summary-panel-v1");
+
+    if (!panel) {
+      panel = document.createElement("section");
+      panel.id = "iad-extraction-summary-panel-v1";
+      panel.style.border = "1px solid rgba(125,211,252,.35)";
+      panel.style.borderRadius = "14px";
+      panel.style.background = "#101d2d";
+      panel.style.padding = "14px";
+      panel.style.margin = "12px 0";
+      panel.style.color = "#e5edf7";
+
+      const host = findHost();
+      if (host && host.parentElement && host.id === "iad-real-final-panel") {
+        host.parentElement.insertBefore(panel, host.nextSibling);
+      } else {
+        host.appendChild(panel);
+      }
+    }
+
+    panel.innerHTML = `
+      <h3 style="margin:0 0 10px 0">Extracción IA para revisar</h3>
+
+      <div style="display:grid;grid-template-columns:1fr;gap:10px">
+        <div>
+          <div style="color:#9fb0c4;font-size:.84rem;margin-bottom:4px">Texto transcrito literal</div>
+          <pre style="white-space:pre-wrap;word-break:break-word;margin:0;background:#0b1625;border:1px solid rgba(148,163,184,.22);border-radius:10px;padding:10px;max-height:170px;overflow:auto">${esc(info.literal || "—")}</pre>
+        </div>
+
+        <div>
+          <div style="color:#9fb0c4;font-size:.84rem;margin-bottom:4px">Tags específicos reconocidos</div>
+          <pre style="white-space:pre-wrap;word-break:break-word;margin:0;background:#0b1625;border:1px solid rgba(148,163,184,.22);border-radius:10px;padding:10px;max-height:170px;overflow:auto">${esc(info.tags.length ? info.tags.map(x => "• " + x).join("\n") : "—")}</pre>
+        </div>
+
+        <div>
+          <div style="color:#9fb0c4;font-size:.84rem;margin-bottom:4px">Advertencias</div>
+          <pre style="white-space:pre-wrap;word-break:break-word;margin:0;background:#0b1625;border:1px solid rgba(148,163,184,.22);border-radius:10px;padding:10px;max-height:150px;overflow:auto">${esc(info.warnings.length ? info.warnings.map(x => "• " + x).join("\n") : "—")}</pre>
+        </div>
+      </div>
+    `;
+  }
+
+  function capture(data) {
+    if (!data || typeof data !== "object") return;
+    window.__iadLastExtractionSummaryPayloadV1 = data;
+    render(data);
+  }
+
+  const oldFetch = window.fetch;
+  if (typeof oldFetch === "function" && !oldFetch.__iadExtractionSummaryPanelWrappedV1) {
+    const wrapped = async function () {
+      const res = await oldFetch.apply(this, arguments);
+
+      try {
+        const clone = res.clone();
+        const ct = clone.headers.get("content-type") || "";
+        if (ct.includes("application/json")) {
+          clone.json().then(function (data) {
+            capture(data);
+            setTimeout(function () { render(data); }, 400);
+            setTimeout(function () { render(data); }, 1200);
+          }).catch(function () {});
+        }
+      } catch (e) {}
+
+      return res;
+    };
+
+    wrapped.__iadExtractionSummaryPanelWrappedV1 = true;
+    window.fetch = wrapped;
+  }
+
+  window.iadRenderExtractionSummaryV1 = function () {
+    const data = window.__iadLastExtractionSummaryPayloadV1
+      || window.__iadValidationLastPayloadV3
+      || window.__iadTrainingLastPayloadV2
+      || {};
+    render(data);
+  };
+})();
+

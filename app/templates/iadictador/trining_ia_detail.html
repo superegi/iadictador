@@ -1,0 +1,80 @@
+{% extends "iadictador/base.html" %}
+{% block title %}IA Dictador - Trining IA #{{ training_id }}{% endblock %}
+
+{% block content %}
+<style>
+  .iad2-card{border:1px solid rgba(148,163,184,.24);border-radius:14px;background:#101d2d;padding:14px;margin-bottom:14px}
+  .iad2-title{margin:0;font-size:1.25rem}
+  .iad2-muted{color:#9fb0c4;font-size:.9rem}
+  .iad2-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:900px){.iad2-grid{grid-template-columns:1fr}}
+  .iad2-pre{white-space:pre-wrap;word-break:break-word;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0b1625;padding:12px;min-height:80px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.88rem}
+  .iad2-link{color:#7dd3fc;font-weight:700;text-decoration:none}
+  .iad2-field{border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0b1625;padding:10px}
+  .iad2-label{color:#9fb0c4;font-size:.78rem;margin-bottom:4px}
+</style>
+
+<section class="iad2-card">
+  <h1 class="iad2-title">Trining IA #{{ training_id }}</h1>
+  <div class="iad2-muted">Detalle completo de la entrada de aprendizaje.</div>
+  <div style="margin-top:10px"><a class="iad2-link" href="/iad/trining-ia">← Volver a Trining IA</a></div>
+</section>
+
+{% if not item %}
+<section class="iad2-card">No se encontró la entrada.</section>
+{% else %}
+<section class="iad2-card">
+  <div class="iad2-grid">
+    <div class="iad2-field"><div class="iad2-label">Hora</div>{{ item.hora }}</div>
+    <div class="iad2-field"><div class="iad2-label">Modelo IA utilizado</div>{{ item.modelo_ia_utilizado }}</div>
+    <div class="iad2-field"><div class="iad2-label">Versión IA</div>{{ item.version_ia }}</div>
+    <div class="iad2-field"><div class="iad2-label">Plantilla</div>{{ item.plantilla }}</div>
+    <div class="iad2-field"><div class="iad2-label">OT</div>{{ item.ot_id }}</div>
+    <div class="iad2-field"><div class="iad2-label">Diff numérico</div>Cambios: {{ item.diff_numerico.cambios }} · +{{ item.diff_numerico.agregadas }} · -{{ item.diff_numerico.eliminadas }} · líneas {{ item.diff_numerico.lineas_diff }}</div>
+  </div>
+</section>
+
+
+<section class="iad2-card">
+  <h2>Responsable técnico</h2>
+  <div class="iad2-pre">{% if item.metadata and item.metadata.responsable_ia %}{{ item.metadata.responsable_ia | tojson(indent=2) }}{% else %}Modelo: {{ item.modelo_ia_utilizado or "modelo_no_registrado" }}
+Proceso: {{ item.version_ia or "proceso_no_registrado" }}
+Nota: registro antiguo o sin traza completa.{% endif %}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Texto transcrito literal</h2>
+  <div class="iad2-pre">{{ item.texto_transcrito_literal }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Tags importantes reconocidos</h2>
+  <div class="iad2-pre">{{ item.tags_importantes_reconocidos | tojson(indent=2) }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Plantilla a utilizar</h2>
+  <div class="iad2-pre">{{ item.plantilla_a_utilizar }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Propuesta de la IA</h2>
+  <div class="iad2-pre">{{ item.propuesta_ia }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Puntos conflictivos detectados</h2>
+  <div class="iad2-pre">{{ item.puntos_conflictivos_detectados | tojson(indent=2) }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Versión final guardada por el usuario</h2>
+  <div class="iad2-pre">{{ item.version_final_guardada_usuario }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Diff</h2>
+  <div class="iad2-pre">{{ item.diff }}</div>
+</section>
+{% endif %}
+{% endblock %}

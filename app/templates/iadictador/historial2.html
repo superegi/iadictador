@@ -1,0 +1,125 @@
+{% extends "iadictador/base.html" %}
+{% block title %}IA Dictador - Historial2{% endblock %}
+
+{% block content %}
+<style>
+  #iad-validation-history-panel-v3,
+  #iad-validation-history-panel-v4,
+  #iad-training-corrections-panel-v2,
+  #iad-training-corrections-panel-v3 { display:none !important; }
+
+  .iad2-card{border:1px solid rgba(148,163,184,.24);border-radius:14px;background:#101d2d;padding:14px;margin-bottom:14px}
+  .iad2-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+  .iad2-title{margin:0;font-size:1.25rem}
+  .iad2-muted{color:#9fb0c4;font-size:.9rem}
+  .iad2-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .iad2-actions button{border:0;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer;background:#38bdf8;color:#06111f}
+  .iad2-input{background:#0b1625;color:#e5edf7;border:1px solid rgba(148,163,184,.25);border-radius:10px;padding:8px 10px;min-width:320px}
+  .iad2-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.18);border-radius:12px}
+  table.iad2-table{width:100%;border-collapse:collapse;font-size:.9rem}
+  .iad2-table th,.iad2-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.16);text-align:left;vertical-align:top;white-space:nowrap}
+  .iad2-table th{color:#cbd5e1;background:#0f172a;position:sticky;top:0}
+  .iad2-link{color:#7dd3fc;font-weight:700;text-decoration:none}
+  .iad2-badge{display:inline-block;border-radius:999px;padding:3px 8px;background:#1e293b;color:#dbeafe;font-size:.78rem}
+</style>
+
+<section class="iad2-card">
+  <div class="iad2-head">
+    <div>
+      <h1 class="iad2-title">Historial2</h1>
+      <div class="iad2-muted">Tabla limpia de trabajos generados por audio/texto. No depende de la OT antigua.</div>
+    </div>
+    <div class="iad2-actions">
+      <input id="iad2Search" class="iad2-input" type="search" placeholder="Buscar hora, usuario, modalidad, estudio..." />
+      <button id="iad2Refresh" type="button">Actualizar</button>
+    </div>
+  </div>
+</section>
+
+<section class="iad2-card">
+  <div class="iad2-muted" id="iad2Count">Cargando...</div>
+  <div class="iad2-table-wrap" style="margin-top:10px">
+    <table class="iad2-table">
+      <thead>
+        <tr>
+          <th>Trabajo</th>
+          <th>Hora</th>
+          <th>Usuario</th>
+          <th>Modalidad</th>
+          <th>Nombre estudio</th>
+          <th>Estado</th>
+          <th>Informe</th>
+          <th>Revisión</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="iad2Body">
+        <tr><td colspan="9">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+(function(){
+  "use strict";
+  const state={items:[],filtered:[]};
+
+  function esc(s){s=s===null||s===undefined?"":String(s);return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+  function norm(s){return (s===null||s===undefined?"":String(s)).toLowerCase()}
+  function badge(v){return v ? "<span class='iad2-badge'>sí</span>" : "<span class='iad2-badge'>—</span>"}
+
+  function removeContaminants(){
+    document.querySelectorAll("section,div").forEach(function(el){
+      const t=(el.textContent||"").trim();
+      if(t.startsWith("Historial de validaciones IA Dictador")) el.remove();
+    });
+  }
+
+  function render(){
+    const q=norm(document.getElementById("iad2Search")?.value||"").trim();
+    state.filtered=state.items.filter(x=>{
+      if(!q)return true;
+      return [x.id,x.hora,x.usuario,x.modalidad,x.nombre_estudio,x.estado,x.template_name].map(norm).join(" ").includes(q);
+    });
+    document.getElementById("iad2Count").textContent=`Total: ${state.items.length} · Mostrando: ${state.filtered.length}`;
+    const body=document.getElementById("iad2Body");
+    if(!state.filtered.length){body.innerHTML="<tr><td colspan='9'>Sin trabajos generados.</td></tr>";return;}
+    body.innerHTML=state.filtered.map(x=>`
+      <tr>
+        <td>${esc(x.id)}</td>
+        <td>${esc(x.hora)}</td>
+        <td>${esc(x.usuario)}</td>
+        <td>${esc(x.modalidad)}</td>
+        <td>${esc(x.nombre_estudio)}</td>
+        <td><span class="iad2-badge">${esc(x.estado||"—")}</span></td>
+        <td>${badge(x.tiene_informe)}</td>
+        <td>${badge(x.tiene_revision)}</td>
+        <td><a class="iad2-link" href="${esc(x.link)}">Abrir</a></td>
+      </tr>
+    `).join("");
+  }
+
+  async function load(){
+    removeContaminants();
+    const body=document.getElementById("iad2Body");
+    body.innerHTML="<tr><td colspan='9'>Cargando...</td></tr>";
+    try{
+      const r=await fetch("/iad/api/historial2/workitems.json?limit=1000");
+      const d=await r.json();
+      if(!r.ok||!d.ok)throw new Error(d.error||"No se pudo cargar");
+      state.items=d.items||[];
+      render();
+      removeContaminants();
+    }catch(e){
+      body.innerHTML=`<tr><td colspan='9'>Error: ${esc(e.message||e)}</td></tr>`;
+    }
+  }
+
+  document.getElementById("iad2Refresh")?.addEventListener("click",load);
+  document.getElementById("iad2Search")?.addEventListener("input",render);
+  load();
+  setInterval(removeContaminants, 700);
+})();
+</script>
+{% endblock %}

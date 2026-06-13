@@ -1,0 +1,83 @@
+{% extends "iadictador/base.html" %}
+{% block title %}IA Dictador - Trabajo {{ item_id }}{% endblock %}
+
+{% block content %}
+<style>
+  .iad2-card{border:1px solid rgba(148,163,184,.24);border-radius:14px;background:#101d2d;padding:14px;margin-bottom:14px}
+  .iad2-title{margin:0;font-size:1.25rem}
+  .iad2-muted{color:#9fb0c4;font-size:.9rem}
+  .iad2-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  @media(max-width:900px){.iad2-grid{grid-template-columns:1fr}}
+  .iad2-field{border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0b1625;padding:10px}
+  .iad2-label{color:#9fb0c4;font-size:.78rem;margin-bottom:4px}
+  .iad2-pre{white-space:pre-wrap;word-break:break-word;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0b1625;padding:12px;min-height:70px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.88rem}
+  .iad2-link{color:#7dd3fc;font-weight:700;text-decoration:none}
+</style>
+
+<section class="iad2-card">
+  <h1 class="iad2-title">Trabajo #{{ item_id }}</h1>
+  <div class="iad2-muted">Hoja no editable del trabajo generado.</div>
+  <div style="margin-top:10px"><a class="iad2-link" href="/iad/historial2">← Volver a Historial2</a></div>
+</section>
+
+{% if not item %}
+<section class="iad2-card">No se encontró el trabajo.</section>
+{% else %}
+<section class="iad2-card">
+  <div class="iad2-grid">
+    <div class="iad2-field"><div class="iad2-label">Hora local</div>{{ item.hora }}</div>
+    <div class="iad2-field"><div class="iad2-label">Usuario</div>{{ item.usuario }}</div>
+    <div class="iad2-field"><div class="iad2-label">Modalidad</div>{{ item.modalidad }}</div>
+    <div class="iad2-field"><div class="iad2-label">Nombre estudio</div>{{ item.nombre_estudio }}</div>
+    <div class="iad2-field"><div class="iad2-label">Estado</div>{{ item.estado }}</div>
+    <div class="iad2-field"><div class="iad2-label">Plantilla</div>{{ item.template_name }}</div>
+    <div class="iad2-field"><div class="iad2-label">Modelo IA</div>{{ item.modelo_ia }}</div>
+    <div class="iad2-field"><div class="iad2-label">Versión IA</div>{{ item.version_ia }}</div>
+  </div>
+</section>
+
+
+<section class="iad2-card">
+  <h2>Responsable técnico</h2>
+  <div class="iad2-pre">{% if item.metadata and item.metadata.responsable_ia %}{{ item.metadata.responsable_ia | tojson(indent=2) }}{% else %}Modelo: {{ item.modelo_ia or "modelo_no_registrado" }}
+Proceso: {{ item.version_ia or "proceso_no_registrado" }}
+Fuente: {{ item.source or "sin_fuente" }}
+Nota: registro antiguo o sin traza completa.{% endif %}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Texto transcrito literal</h2>
+  <div class="iad2-pre">{{ item.transcripcion }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Tags importantes reconocidos</h2>
+  <div class="iad2-pre">{{ item.tags | tojson(indent=2) }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Extracción IA / JSON clínico</h2>
+  <div class="iad2-pre">{{ item.clinical_json | tojson(indent=2) }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Propuesta IA</h2>
+  <div class="iad2-pre">{{ item.propuesta_ia }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Puntos conflictivos detectados</h2>
+  <div class="iad2-pre">{{ item.puntos_conflictivos | tojson(indent=2) }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Versión final guardada por el usuario</h2>
+  <div class="iad2-pre">{{ item.version_final_usuario }}</div>
+</section>
+
+<section class="iad2-card">
+  <h2>Diff</h2>
+  <div class="iad2-pre">{{ item.diff }}</div>
+</section>
+{% endif %}
+{% endblock %}

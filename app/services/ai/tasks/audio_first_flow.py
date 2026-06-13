@@ -3702,3 +3702,957 @@ try:
 except Exception:
     pass
 
+
+# IAD_ECO_ABDOMINAL_STABLE_WRITER_V1
+# Writer estable para Ecografía Abdominal.
+# Fuente de verdad: dictado literal + hallazgos estructurados.
+# Reglas:
+# - no placeholders;
+# - no alternativas de plantilla;
+# - no nefrolitiasis inventada;
+# - impresión conceptual sin guiones ni medidas.
+
+import re as _iad_eco_re
+import json as _iad_eco_json
+import unicodedata as _iad_eco_ud
+
+
+def _iad_eco_norm(value):
+    value = "" if value is None else str(value)
+    value = value.lower()
+    value = "".join(
+        c for c in _iad_eco_ud.normalize("NFD", value)
+        if _iad_eco_ud.category(c) != "Mn"
+    )
+    value = value.replace("\\n", " ")
+    value = _iad_eco_re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def _iad_eco_try_json(value):
+    if not isinstance(value, str):
+        return None
+    t = value.strip()
+    if not t:
+        return None
+    if not ((t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]"))):
+        return None
+    try:
+        return _iad_eco_json.loads(t)
+    except Exception:
+        return None
+
+
+def _iad_eco_extract_text(value, depth=0):
+    if depth > 4:
+        return "" if value is None else str(value)
+
+    if isinstance(value, dict):
+        for k in [
+            "transcripcion",
+            "transcription",
+            "raw_audio_first_text",
+            "dictado_original",
+            "source_text",
+            "texto",
+            "text",
+            "hallazgos_radiologicos",
+            "impresion_diagnostica",
+        ]:
+            v = value.get(k)
+            if isinstance(v, str) and v.strip():
+                return _iad_eco_extract_text(v, depth + 1)
+
+        for k in ["analysis", "generated", "data", "result"]:
+            v = value.get(k)
+            if isinstance(v, dict):
+                out = _iad_eco_extract_text(v, depth + 1)
+                if out.strip():
+                    return out
+
+        return ""
+
+    if isinstance(value, str):
+        nested = _iad_eco_try_json(value)
+        if nested is not None:
+            return _iad_eco_extract_text(nested, depth + 1)
+        return value.strip()
+
+    return "" if value is None else str(value).strip()
+
+
+def _iad_eco_source(payload):
+    if not isinstance(payload, dict):
+        return _iad_eco_extract_text(payload)
+
+    chunks = []
+
+    for k in [
+        "dictado_original",
+        "source_text",
+        "texto_origen",
+        "transcripcion",
+        "transcription",
+        "raw_audio_first_text",
+        "hallazgos_radiologicos",
+        "impresion_diagnostica",
+    ]:
+        v = payload.get(k)
+        if isinstance(v, str) and v.strip():
+            chunks.append(_iad_eco_extract_text(v))
+
+    try:
+        ac = payload.get("audio_composition") or {}
+        if isinstance(ac, dict):
+            for k in ["text", "transcription", "combined_text"]:
+                v = ac.get(k)
+                if isinstance(v, str) and v.strip():
+                    chunks.append(_iad_eco_extract_text(v))
+    except Exception:
+        pass
+
+    return "\n".join([c for c in chunks if c.strip()])
+
+
+def _iad_eco_template_name(payload):
+    if not isinstance(payload, dict):
+        return ""
+    tpl = payload.get("plantilla_sugerida")
+    if isinstance(tpl, dict):
+        return str(tpl.get("nombre") or tpl.get("name") or "")
+    return str(payload.get("plantilla_nombre") or payload.get("template_name") or payload.get("template") or "")
+
+
+def _iad_eco_structured(payload):
+    out = []
+    if not isinstance(payload, dict):
+        return out
+
+    for key in ["hallazgos_estructurados", "structured_findings", "clinical_json"]:
+        v = payload.get(key)
+        if isinstance(v, list):
+            out.extend([x for x in v if isinstance(x, dict)])
+        elif isinstance(v, str):
+            parsed = _iad_eco_try_json(v)
+            if isinstance(parsed, list):
+                out.extend([x for x in parsed if isinstance(x, dict)])
+
+    return out
+
+
+def _iad_eco_detect(payload):
+    src = _iad_eco_source(payload)
+    tpl = _iad_eco_template_name(payload)
+    n = _iad_eco_norm(src + " " + tpl)
+
+    return (
+        "ecografia abdominal" in n
+        or "ecografia de abdomen" in n
+        or "eco abdomen" in n
+        or "ultrasonido abdominal" in n
+        or "ecografía abdominal" in str(src + " " + tpl).lower()
+    )
+
+
+def _iad_eco_find_size_near(text, keyword_regex, window=120):
+    m = _iad_eco_re.search(keyword_regex, text, flags=_iad_eco_re.I | _iad_eco_re.S)
+    if not m:
+        return ""
+
+    after = text[m.end():min(len(text), m.end() + window)]
+    before = text[max(0, m.start() - window):m.start()]
+    chunk = text[max(0, m.start() - window):min(len(text), m.end() + window)]
+
+    pats = [
+        r"(\d+(?:[,.]\d+)?)\s*(?:mm|mil[ií]metros?)",
+        r"(\d+(?:[,.]\d+)?)\s*(?:cm|cent[ií]metros?)",
+    ]
+
+    for area in [after, chunk, before]:
+        for pat in pats:
+            sm = _iad_eco_re.search(pat, area, flags=_iad_eco_re.I)
+            if sm:
+                raw = sm.group(0).lower()
+                unit = "mm" if "mm" in raw or "mil" in raw else "cm"
+                return f"{sm.group(1).replace(',', '.')} {unit}"
+
+    return ""
+
+
+def _iad_eco_struct_value(findings, organ_terms, finding_terms=None, prefer_measure=True):
+    organ_terms = [_iad_eco_norm(x) for x in organ_terms]
+    finding_terms = [_iad_eco_norm(x) for x in (finding_terms or [])]
+
+    for h in findings:
+        blob = _iad_eco_norm(" ".join(str(h.get(k) or "") for k in h.keys()))
+        if not all(term in blob for term in organ_terms):
+            continue
+        if finding_terms and not any(term in blob for term in finding_terms):
+            continue
+
+        if prefer_measure:
+            for k in ["medida", "size", "diametro", "diámetro"]:
+                v = h.get(k)
+                if v:
+                    return str(v).strip()
+
+        return h
+
+    return ""
+
+
+def _iad_eco_has_explicit_renal_lithiasis(src, findings):
+    n = _iad_eco_norm(src)
+
+    if "nefrolitiasis" in n or "litiasis renal" in n or "calculo renal" in n or "cálculo renal" in src.lower():
+        return True
+
+    for h in findings:
+        blob = _iad_eco_norm(" ".join(str(h.get(k) or "") for k in h.keys()))
+        if ("nefrolitiasis" in blob or "litiasis renal" in blob or "calculo renal" in blob) and "rinon" in blob:
+            return True
+
+    return False
+
+
+def _iad_eco_extract_facts(payload):
+    src = _iad_eco_source(payload)
+    n = _iad_eco_norm(src)
+    findings = _iad_eco_structured(payload)
+
+    facts = {}
+
+    facts["hepatic_steatosis"] = (
+        ("aumento" in n and "ecogenicidad" in n and "higado" in n)
+        or "esteatosis" in n
+        or bool(_iad_eco_struct_value(findings, ["higado"], ["ecogenicidad"], prefer_measure=False))
+        or bool(_iad_eco_struct_value(findings, ["hígado"], ["ecogenicidad"], prefer_measure=False))
+    )
+
+    facts["gallbladder_present"] = (
+        "vesicula biliar presente" in n
+        or "vesicula presente" in n
+        or "vesícula biliar presente" in src.lower()
+    )
+    facts["gallbladder_absent"] = "vesicula biliar no visible" in n or "vesicula no visualizada" in n or "colecistectom" in n
+
+    facts["gallstones"] = (
+        "litiasis" in n and ("vesicula" in n or "vesicular" in n)
+    ) or bool(_iad_eco_struct_value(findings, ["vesicula"], ["litiasis"], prefer_measure=False))
+
+    facts["multiple_gallstones"] = (
+        "multiples litiasis" in n
+        or "múltiples litiasis" in src.lower()
+        or "colelitiasis multiple" in n
+        or "colelitiasis múltiple" in src.lower()
+    )
+
+    facts["gallstone_size"] = (
+        _iad_eco_struct_value(findings, ["vesicula"], ["litiasis"], prefer_measure=True)
+        or _iad_eco_find_size_near(src, r"(ves[ií]cula|litiasis|c[aá]lculo|colelitiasis)")
+    )
+
+    facts["bile_duct_size"] = (
+        _iad_eco_struct_value(findings, ["via biliar"], ["diametro"], prefer_measure=True)
+        or _iad_eco_struct_value(findings, ["vía biliar"], ["diametro"], prefer_measure=True)
+        or _iad_eco_find_size_near(src, r"(v[ií]a biliar|col[eé]doco)")
+    )
+
+    facts["right_kidney_size"] = (
+        _iad_eco_struct_value(findings, ["rinon", "derecho"], ["tamano"], prefer_measure=True)
+        or _iad_eco_struct_value(findings, ["riñón", "derecho"], ["tamaño"], prefer_measure=True)
+        or _iad_eco_find_size_near(src, r"(ri[nñ][oó]n derecho)")
+    )
+
+    facts["left_kidney_size"] = (
+        _iad_eco_struct_value(findings, ["rinon", "izquierdo"], ["tamano"], prefer_measure=True)
+        or _iad_eco_struct_value(findings, ["riñón", "izquierdo"], ["tamaño"], prefer_measure=True)
+        or _iad_eco_find_size_near(src, r"(ri[nñ][oó]n izquierdo)")
+    )
+
+    facts["renal_lithiasis"] = _iad_eco_has_explicit_renal_lithiasis(src, findings)
+
+    return facts
+
+
+def _iad_eco_build_report(payload):
+    facts = _iad_eco_extract_facts(payload)
+
+    lines = []
+    impression = []
+
+    if facts["hepatic_steatosis"]:
+        lines.append("Hígado de morfología normal, con aumento difuso de su ecogenicidad. Sin lesiones focales en las imágenes visibles.")
+        impression.append("Esteatosis hepática.")
+    else:
+        lines.append("Hígado de morfología normal, sin lesiones focales en las imágenes visibles.")
+
+    if facts["gallbladder_absent"]:
+        lines.append("Vesícula biliar no visualizada.")
+    elif facts["gallstones"]:
+        size = facts["gallstone_size"]
+        if facts["multiple_gallstones"]:
+            if size:
+                lines.append(f"Vesícula biliar en repleción parcial, de pared fina. Presenta múltiples litiasis en su interior de hasta {size}.")
+            else:
+                lines.append("Vesícula biliar en repleción parcial, de pared fina. Presenta múltiples litiasis en su interior.")
+            impression.append("Colelitiasis múltiple.")
+        else:
+            if size:
+                lines.append(f"Vesícula biliar en repleción parcial, de pared fina. Presenta litiasis en su interior de hasta {size}.")
+            else:
+                lines.append("Vesícula biliar en repleción parcial, de pared fina. Presenta litiasis en su interior.")
+            impression.append("Colelitiasis.")
+    else:
+        lines.append("Vesícula biliar en repleción parcial, de pared fina.")
+
+    lines.append("No hay dilatación de la vía biliar intrahepática.")
+
+    if facts["bile_duct_size"]:
+        lines.append(f"La vía biliar a nivel del colédoco, alcanza {facts['bile_duct_size']}.")
+
+    if facts["renal_lithiasis"]:
+        lines.append("Se identifican litiasis renales no obstructivas.")
+        impression.append("Nefrolitiasis no obstructiva.")
+
+    if facts["right_kidney_size"] and facts["left_kidney_size"]:
+        lines.append(f"El riñón derecho mide {facts['right_kidney_size']}, el izquierdo {facts['left_kidney_size']}.")
+    elif facts["right_kidney_size"]:
+        lines.append(f"El riñón derecho mide {facts['right_kidney_size']}.")
+    elif facts["left_kidney_size"]:
+        lines.append(f"El riñón izquierdo mide {facts['left_kidney_size']}.")
+    else:
+        lines.append("Riñones de tamaño conservado.")
+
+    lines.append("Bazo y páncreas dentro de límites normales.")
+    lines.append("Aorta abdominal de calibre conservado.")
+    lines.append("No hay líquido libre significativo.")
+    lines.append("")
+    lines.append("Impresión diagnóstica:")
+
+    # Unicidad y orden preferido: colelitiasis primero, luego esteatosis.
+    preferred = []
+    for target in ["Colelitiasis múltiple.", "Colelitiasis.", "Esteatosis hepática.", "Nefrolitiasis no obstructiva."]:
+        if target in impression and target not in preferred:
+            preferred.append(target)
+
+    for item in impression:
+        if item not in preferred:
+            preferred.append(item)
+
+    if not preferred:
+        preferred = ["Sin hallazgos ecográficos patológicos significativos."]
+
+    lines.extend(preferred)
+
+    return "\n".join(lines).strip()
+
+
+def _iad_eco_apply(payload):
+    if not isinstance(payload, dict):
+        return payload
+
+    if not _iad_eco_detect(payload):
+        return payload
+
+    before = str(payload.get("informe_final") or payload.get("final_report") or payload.get("resultado_revisado") or "")
+
+    report = _iad_eco_build_report(payload)
+
+    tpl = payload.get("plantilla_sugerida")
+    if not isinstance(tpl, dict):
+        tpl = {}
+
+    tpl["nombre"] = "Ecografía Abdominal"
+    tpl["name"] = "Ecografía Abdominal"
+    tpl["confianza"] = "alta"
+
+    payload["plantilla_sugerida"] = tpl
+    payload["plantilla_nombre"] = "Ecografía Abdominal"
+    payload["template_name"] = "Ecografía Abdominal"
+
+    payload["informe_final_antes_eco_abdominal_writer"] = before
+    payload["informe_final"] = report
+    payload["final_report"] = report
+    payload["resultado_revisado"] = report
+
+    warnings = payload.get("advertencias")
+    if not isinstance(warnings, list):
+        warnings = [] if warnings in (None, "") else [str(warnings)]
+
+    warnings.append("Writer Ecografía Abdominal V1: informe reconstruido limpio desde dictado/hallazgos; sin placeholders ni nefrolitiasis inventada.")
+    payload["advertencias"] = warnings
+
+    payload["eco_abdominal_writer_v1"] = {
+        "active": True,
+        "rules": "app/services/ai/intelligence_pack/rules_editable/ecografia_abdominal_rules.yaml",
+        "no_placeholders": True,
+        "no_invented_nephrolithiasis": True,
+        "conceptual_impression": True,
+    }
+
+    old_method = str(payload.get("metodo") or payload.get("method") or "")
+    if "eco_abdominal_writer_v1" not in old_method:
+        payload["metodo"] = (old_method + "+eco_abdominal_writer_v1").strip("+") if old_method else "eco_abdominal_writer_v1"
+
+    return payload
+
+
+try:
+    _iad_eco_orig_apply_template_bridge_v1 = _iad_v2_apply_template_bridge_force
+
+    def _iad_v2_apply_template_bridge_force(*args, **kwargs):
+        result = _iad_eco_orig_apply_template_bridge_v1(*args, **kwargs)
+        return _iad_eco_apply(result)
+
+except Exception:
+    pass
+
+
+try:
+    _iad_eco_orig_audio_first_complete_bridge_v1 = _iad_audio_first_complete_with_template_bridge
+
+    async def _iad_audio_first_complete_with_template_bridge(*args, **kwargs):
+        result = await _iad_eco_orig_audio_first_complete_bridge_v1(*args, **kwargs)
+        return _iad_eco_apply(result)
+
+except Exception:
+    pass
+
+
+# IAD_EXTRACTION_SUMMARY_FIELDS_V1
+# Agrega al payload campos visibles y exportables:
+# - texto_transcrito_literal
+# - tags_especificos_ia
+# - advertencias visibles
+# - resumen_extraccion
+
+import re as _iad_sum_re
+import json as _iad_sum_json
+import unicodedata as _iad_sum_ud
+
+
+def _iad_sum_norm(value):
+    value = "" if value is None else str(value)
+    value = value.lower()
+    value = "".join(
+        c for c in _iad_sum_ud.normalize("NFD", value)
+        if _iad_sum_ud.category(c) != "Mn"
+    )
+    value = value.replace("\\n", " ")
+    value = _iad_sum_re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def _iad_sum_try_json(value):
+    if not isinstance(value, str):
+        return None
+    t = value.strip()
+    if not t:
+        return None
+    if not ((t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]"))):
+        return None
+    try:
+        return _iad_sum_json.loads(t)
+    except Exception:
+        return None
+
+
+def _iad_sum_extract_text(value, depth=0):
+    if depth > 4:
+        return "" if value is None else str(value)
+
+    if isinstance(value, dict):
+        for k in [
+            "transcripcion",
+            "transcription",
+            "raw_audio_first_text",
+            "dictado_original",
+            "source_text",
+            "texto",
+            "text",
+            "hallazgos_radiologicos",
+            "impresion_diagnostica",
+        ]:
+            v = value.get(k)
+            if isinstance(v, str) and v.strip():
+                return _iad_sum_extract_text(v, depth + 1)
+
+        for k in ["analysis", "generated", "data", "result"]:
+            v = value.get(k)
+            if isinstance(v, dict):
+                out = _iad_sum_extract_text(v, depth + 1)
+                if out.strip():
+                    return out
+
+        return ""
+
+    if isinstance(value, str):
+        nested = _iad_sum_try_json(value)
+        if nested is not None:
+            return _iad_sum_extract_text(nested, depth + 1)
+        return value.strip()
+
+    return "" if value is None else str(value).strip()
+
+
+def _iad_sum_source_text(payload):
+    if not isinstance(payload, dict):
+        return _iad_sum_extract_text(payload)
+
+    chunks = []
+
+    for k in [
+        "texto_transcrito_literal",
+        "dictado_original",
+        "source_text",
+        "texto_origen",
+        "transcripcion",
+        "transcription",
+        "raw_audio_first_text",
+        "hallazgos_radiologicos",
+        "impresion_diagnostica",
+    ]:
+        v = payload.get(k)
+        if isinstance(v, str) and v.strip():
+            chunks.append(_iad_sum_extract_text(v))
+
+    try:
+        ac = payload.get("audio_composition") or {}
+        if isinstance(ac, dict):
+            for k in ["text", "transcription", "combined_text"]:
+                v = ac.get(k)
+                if isinstance(v, str) and v.strip():
+                    chunks.append(_iad_sum_extract_text(v))
+    except Exception:
+        pass
+
+    for c in chunks:
+        c = c.strip()
+        if c:
+            return c
+
+    return ""
+
+
+def _iad_sum_measure_near(text, keyword_regex, window=120):
+    m = _iad_sum_re.search(keyword_regex, text, flags=_iad_sum_re.I | _iad_sum_re.S)
+    if not m:
+        return ""
+
+    after = text[m.end():min(len(text), m.end() + window)]
+    before = text[max(0, m.start() - window):m.start()]
+    chunk = text[max(0, m.start() - window):min(len(text), m.end() + window)]
+
+    pats = [
+        r"(\d+(?:[,.]\d+)?)\s*(?:mm|mil[ií]metros?)",
+        r"(\d+(?:[,.]\d+)?)\s*(?:cm|cent[ií]metros?)",
+    ]
+
+    for area in [after, chunk, before]:
+        for pat in pats:
+            sm = _iad_sum_re.search(pat, area, flags=_iad_sum_re.I)
+            if sm:
+                raw = sm.group(0).lower()
+                unit = "mm" if "mm" in raw or "mil" in raw else "cm"
+                return f"{sm.group(1).replace(',', '.')} {unit}"
+
+    return ""
+
+
+def _iad_sum_structured_tags(payload):
+    tags = []
+
+    if not isinstance(payload, dict):
+        return tags
+
+    for key in [
+        "tags_especificos_ia",
+        "hallazgos_estructurados",
+        "structured_findings",
+        "mapa_aplicacion",
+    ]:
+        val = payload.get(key)
+        if isinstance(val, list):
+            for x in val:
+                if isinstance(x, dict):
+                    parts = []
+                    for k in [
+                        "organo_o_region", "region", "organo", "lateralidad",
+                        "hallazgo", "finding", "medida", "size", "interpretacion"
+                    ]:
+                        v = x.get(k)
+                        if v not in (None, ""):
+                            parts.append(str(v))
+                    if parts:
+                        tags.append(" · ".join(parts))
+                    else:
+                        tags.append(str(x))
+                elif str(x).strip():
+                    tags.append(str(x).strip())
+
+    return tags
+
+
+def _iad_sum_detect_tags_from_text(payload):
+    source = _iad_sum_source_text(payload)
+    n = _iad_sum_norm(source)
+    tags = []
+
+    # Ecografía abdominal.
+    if "ecogenicidad" in n and ("higado" in n or "hepatic" in n):
+        tags.append("Hígado · aumento difuso de ecogenicidad · compatible con esteatosis")
+
+    if ("vesicula" in n or "vesicular" in n) and ("litiasis" in n or "colelitiasis" in n):
+        size = _iad_sum_measure_near(source, r"(ves[ií]cula|litiasis|c[aá]lculo|colelitiasis)")
+        if "multiple" in n or "multiples" in n or "múltiples" in source.lower():
+            tags.append(f"Vesícula biliar · múltiples litiasis" + (f" · hasta {size}" if size else ""))
+        else:
+            tags.append(f"Vesícula biliar · litiasis" + (f" · hasta {size}" if size else ""))
+
+    if "via biliar" in n or "vía biliar" in source.lower() or "coledoco" in n or "colédoco" in source.lower():
+        size = _iad_sum_measure_near(source, r"(v[ií]a biliar|col[eé]doco)")
+        if size:
+            tags.append(f"Vía biliar / colédoco · {size}")
+        elif "no hay dilatacion" in n or "no dilatada" in n:
+            tags.append("Vía biliar · sin dilatación")
+
+    if "rinon derecho" in n or "riñón derecho" in source.lower():
+        size = _iad_sum_measure_near(source, r"ri[nñ][oó]n derecho")
+        tags.append("Riñón derecho" + (f" · {size}" if size else ""))
+
+    if "rinon izquierdo" in n or "riñón izquierdo" in source.lower():
+        size = _iad_sum_measure_near(source, r"ri[nñ][oó]n izquierdo")
+        tags.append("Riñón izquierdo" + (f" · {size}" if size else ""))
+
+    # TC abdomen/pelvis.
+    if "ateromatosis" in n and ("aorta" in n or "aortica" in n):
+        tags.append("Aorta · ateromatosis calcificada")
+
+    if "adenopatia" in n or "adenopatias" in n:
+        size = _iad_sum_measure_near(source, r"adenopat[ií]as?")
+        tags.append("Adenopatías" + (f" · hasta {size}" if size else ""))
+
+    if "diverticul" in n and "colon" in n:
+        tags.append("Colon · diverticulosis sin signos de complicación")
+
+    if "prostata" in n and ("aument" in n or "prostatomegalia" in n):
+        size = _iad_sum_measure_near(source, r"pr[oó]stata")
+        tags.append("Próstata · aumento de tamaño" + (f" · hasta {size}" if size else ""))
+
+    return tags
+
+
+def _iad_sum_visible_warnings(payload):
+    out = []
+
+    if isinstance(payload, dict):
+        for key in ["advertencias", "warnings", "posibles_omisiones", "puntos_conflictivos_detectados"]:
+            val = payload.get(key)
+            if isinstance(val, list):
+                out.extend([str(x) for x in val if str(x).strip()])
+            elif isinstance(val, str) and val.strip():
+                out.append(val.strip())
+
+    source = _iad_sum_source_text(payload)
+    n = _iad_sum_norm(source)
+
+    # Advertencias negativas: solo si hay riesgo real de error.
+    if ("litiasis" not in n and "nefrolitiasis" not in n) and isinstance(payload, dict):
+        report = str(payload.get("informe_final") or payload.get("final_report") or "")
+        rn = _iad_sum_norm(report)
+        if "nefrolitiasis" in rn or "litiasis renal" in rn:
+            out.append("Advertencia: el informe menciona nefrolitiasis/litiasis renal, pero el dictado literal no la menciona.")
+
+    # Unicidad.
+    clean = []
+    seen = set()
+    for x in out:
+        x = str(x).strip()
+        if not x:
+            continue
+        k = x.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        clean.append(x)
+
+    return clean
+
+
+def _iad_sum_apply(payload):
+    if not isinstance(payload, dict):
+        return payload
+
+    literal = _iad_sum_source_text(payload)
+
+    tags = []
+    tags.extend(_iad_sum_structured_tags(payload))
+    tags.extend(_iad_sum_detect_tags_from_text(payload))
+
+    # Unicidad tags.
+    clean_tags = []
+    seen = set()
+    for t in tags:
+        t = str(t).strip()
+        if not t:
+            continue
+        k = t.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        clean_tags.append(t)
+
+    warnings = _iad_sum_visible_warnings(payload)
+
+    payload["texto_transcrito_literal"] = literal
+    payload["tags_especificos_ia"] = clean_tags
+    payload["advertencias_visibles"] = warnings
+
+    payload["resumen_extraccion"] = {
+        "texto_transcrito_literal": literal,
+        "tags_especificos": clean_tags,
+        "advertencias": warnings,
+    }
+
+    return payload
+
+
+try:
+    _iad_sum_orig_apply_template_bridge_v1 = _iad_v2_apply_template_bridge_force
+
+    def _iad_v2_apply_template_bridge_force(*args, **kwargs):
+        result = _iad_sum_orig_apply_template_bridge_v1(*args, **kwargs)
+        return _iad_sum_apply(result)
+
+except Exception:
+    pass
+
+
+try:
+    _iad_sum_orig_audio_first_complete_bridge_v1 = _iad_audio_first_complete_with_template_bridge
+
+    async def _iad_audio_first_complete_with_template_bridge(*args, **kwargs):
+        result = await _iad_sum_orig_audio_first_complete_bridge_v1(*args, **kwargs)
+        return _iad_sum_apply(result)
+
+except Exception:
+    pass
+
+
+# IAD_RESPONSIBLE_ENGINE_METADATA_V1
+# Agrega traza pública auditable del motor/proceso responsable.
+# No guarda razonamiento interno. Guarda modelo, proveedor, proceso, etapas y prompt/schema IDs.
+
+import os as _iad_resp_os
+import time as _iad_resp_time
+
+
+def _iad_resp_first_env(*names, default=""):
+    for name in names:
+        value = _iad_resp_os.environ.get(name)
+        if value:
+            return value
+    return default
+
+
+def _iad_resp_detect_model(payload=None):
+    if isinstance(payload, dict):
+        for path in [
+            ("responsable_ia", "modelo"),
+            ("intelligence_editor", "model"),
+        ]:
+            cur = payload
+            ok = True
+            for key in path:
+                if isinstance(cur, dict) and key in cur:
+                    cur = cur.get(key)
+                else:
+                    ok = False
+                    break
+            if ok and cur:
+                return str(cur)
+
+        for key in ["modelo_usado", "model", "modelo_ia"]:
+            value = payload.get(key)
+            if value:
+                return str(value)
+
+    return _iad_resp_first_env(
+        "IAD_AI_MODEL_REPORT",
+        "IAD_AI_MODEL_EXTRACTOR",
+        "IAD_AI_MODEL_AUDIO_FIRST_SMART_EDITOR",
+        "IAD_AI_MODEL",
+        "OPENAI_MODEL",
+        "MODEL_NAME",
+        default="modelo_no_registrado"
+    )
+
+
+def _iad_resp_detect_provider():
+    base = _iad_resp_first_env("IAD_AI_BASE_URL", "OPENAI_BASE_URL", default="")
+    provider = _iad_resp_first_env("IAD_AI_PROVIDER", default="")
+    if provider:
+        return provider
+    if "openai.com" in base:
+        return "openai"
+    if base:
+        return "openai_compatible"
+    return "provider_no_registrado"
+
+
+def _iad_resp_detect_process(payload):
+    if not isinstance(payload, dict):
+        return "proceso_no_registrado"
+
+    explicit = (
+        payload.get("proceso_responsable")
+        or payload.get("version_ia")
+        or payload.get("metodo")
+        or payload.get("method")
+        or payload.get("source")
+    )
+    if explicit:
+        return str(explicit)
+
+    stages = []
+    for key in [
+        "eco_abdominal_writer_v1",
+        "stable_writer_v2",
+        "tc_ap_size_tag_fix_v1",
+        "ap_safe_impression_v2",
+        "ap_style_rules",
+        "clean_writer",
+        "exam_type_guard",
+        "structured_mapper",
+        "intelligence_editor",
+    ]:
+        value = payload.get(key)
+        if isinstance(value, dict) and value.get("active"):
+            stages.append(key)
+        elif value:
+            stages.append(key)
+
+    if stages:
+        return "+".join(stages)
+
+    return "audio_first_pipeline"
+
+
+def _iad_resp_detect_prompt_ids(payload):
+    ids = []
+
+    if isinstance(payload, dict):
+        if payload.get("eco_abdominal_writer_v1"):
+            ids.append("rules_editable/ecografia_abdominal_rules.yaml")
+        if payload.get("intelligence_editor"):
+            ids.append("prompts/audio_first_smart_template_editor.md")
+            ids.append("schemas/audio_first_smart_template_editor.schema.json")
+        if payload.get("stable_writer_v2"):
+            ids.append("stable_writer_v2_internal_rules")
+        if payload.get("exam_type_guard"):
+            ids.append("exam_type_guard_internal_rules")
+
+    # Unicidad
+    out = []
+    seen = set()
+    for x in ids:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+def _iad_resp_detect_stages(payload):
+    stages = []
+
+    if isinstance(payload, dict):
+        if payload.get("transcripcion") or payload.get("transcription") or payload.get("texto_transcrito_literal"):
+            stages.append({
+                "etapa": "transcripcion",
+                "responsable": "audio_first_transcription",
+                "modelo": _iad_resp_first_env("IAD_AI_MODEL_TRANSCRIPTION", "IAD_AUDIO_MODEL", default="modelo_audio_no_registrado")
+            })
+
+        if payload.get("hallazgos_estructurados") or payload.get("tags_especificos_ia") or payload.get("resumen_extraccion"):
+            stages.append({
+                "etapa": "extraccion",
+                "responsable": "extractor_tags_json",
+                "modelo": _iad_resp_detect_model(payload)
+            })
+
+        if payload.get("informe_final") or payload.get("final_report"):
+            stages.append({
+                "etapa": "redaccion",
+                "responsable": _iad_resp_detect_process(payload),
+                "modelo": _iad_resp_detect_model(payload)
+            })
+
+        if payload.get("advertencias") or payload.get("advertencias_visibles") or payload.get("posibles_omisiones"):
+            stages.append({
+                "etapa": "revision",
+                "responsable": "warnings_conflict_detector",
+                "modelo": _iad_resp_detect_model(payload)
+            })
+
+    return stages
+
+
+def _iad_resp_apply(payload):
+    if not isinstance(payload, dict):
+        return payload
+
+    provider = _iad_resp_detect_provider()
+    model = _iad_resp_detect_model(payload)
+    process = _iad_resp_detect_process(payload)
+    prompt_ids = _iad_resp_detect_prompt_ids(payload)
+    stages = _iad_resp_detect_stages(payload)
+
+    responsable = {
+        "provider": provider,
+        "modelo": model,
+        "proceso": process,
+        "prompt_schema_ids": prompt_ids,
+        "etapas": stages,
+        "timestamp_unix": int(_iad_resp_time.time()),
+        "nota": "Traza pública auditable del proceso. No contiene razonamiento interno del modelo."
+    }
+
+    payload["responsable_ia"] = responsable
+    payload["modelo_usado"] = model
+    payload["modelo_ia"] = model
+    payload["version_ia"] = process
+    payload["proceso_responsable"] = process
+    payload["etapas_responsables"] = stages
+    payload["prompt_trace_publico"] = prompt_ids
+
+    # También incrustar dentro de metadata para Historial2/Training.
+    meta = payload.get("metadata_json")
+    if isinstance(meta, dict):
+        meta["responsable_ia"] = responsable
+        payload["metadata_json"] = meta
+
+    return payload
+
+
+try:
+    _iad_resp_orig_apply_template_bridge_v1 = _iad_v2_apply_template_bridge_force
+
+    def _iad_v2_apply_template_bridge_force(*args, **kwargs):
+        result = _iad_resp_orig_apply_template_bridge_v1(*args, **kwargs)
+        return _iad_resp_apply(result)
+
+except Exception:
+    pass
+
+
+try:
+    _iad_resp_orig_audio_first_complete_bridge_v1 = _iad_audio_first_complete_with_template_bridge
+
+    async def _iad_audio_first_complete_with_template_bridge(*args, **kwargs):
+        result = await _iad_resp_orig_audio_first_complete_bridge_v1(*args, **kwargs)
+        return _iad_resp_apply(result)
+
+except Exception:
+    pass
+

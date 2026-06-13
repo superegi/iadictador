@@ -517,9 +517,9 @@ a.button.ai-button {
         <a href="/iad/perfil">Mi perfil</a>
         <a href="/iad/plantillas">Plantillas</a>
 <a href="/iad/lugares">Lugares de trabajo</a>
-        <a href="/iad/historial">Historial</a>
+        <a href="/iad/historial2">Historial</a>
 
-<a class="iad-nav-link iad-admin-training-link" href="/iad/admin/training">Training IA</a>
+<a class="iad-nav-link iad-admin-training-link" href="/iad/trining-ia">Training IA</a>
 
         {% if current_user.role == "admin" %}
           <a href="/iad/admin/usuarios">Usuarios</a>
@@ -643,7 +643,79 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 
 <!-- IAD_TRAINING_CORRECTIONS_SCRIPT_V2 -->
-<script src="/static/iad_training_corrections.js?v=20260613173337"></script>
+<script src="/static/iad_training_corrections.js?v=20260613191045"></script>
 <!-- /IAD_TRAINING_CORRECTIONS_SCRIPT_V2 -->
+
+<!-- IAD_HISTORY2_TRININGIA_NAV_V1 -->
+<script>
+(function(){
+  "use strict";
+  function addLinks(){
+    if(document.getElementById("iad-nav-history2")) return;
+    const labels = Array.from(document.querySelectorAll("a,button,div,span")).filter(x => /historial/i.test(x.textContent || ""));
+    let host = null;
+    for (const el of labels) {
+      const p = el.parentElement;
+      if (p && p.children && p.children.length >= 2) { host = p; break; }
+    }
+    host = host || document.querySelector("nav") || document.querySelector("aside") || document.body;
+
+    const wrap = document.createElement("div");
+    wrap.style.display = "grid";
+    wrap.style.gap = "6px";
+    wrap.style.marginTop = "6px";
+    wrap.innerHTML = `
+      <a id="iad-nav-history2" href="/iad/historial2" style="display:block;padding:8px 10px;border-radius:8px;background:#111827;color:#e5edf7;text-decoration:none">Historial2</a>
+      <a id="iad-nav-triningia" href="/iad/trining-ia" style="display:block;padding:8px 10px;border-radius:8px;background:#111827;color:#e5edf7;text-decoration:none">Trining IA</a>
+    `;
+    host.appendChild(wrap);
+  }
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", addLinks);
+  else setTimeout(addLinks, 100);
+})();
+</script>
+<!-- /IAD_HISTORY2_TRININGIA_NAV_V1 -->
+
+
+<!-- IAD_HISTORY2_WORKITEMS_SCRIPT_V1 -->
+<script src="/static/iad_history2_workitems.js?v=20260613191045"></script>
+<!-- /IAD_HISTORY2_WORKITEMS_SCRIPT_V1 -->
+
+
+<!-- IAD_REPLACE_HISTORY_TRAINING_NAV_SAFE_V2 -->
+<script>
+(function(){
+  "use strict";
+  function rewriteNav(){
+    document.querySelectorAll("a").forEach(function(a){
+      var href = a.getAttribute("href") || "";
+      var label = (a.textContent || "").trim().toLowerCase();
+
+      if (href === "/iad/historial" || href === "/iad/history" || label === "historial") {
+        a.setAttribute("href", "/iad/historial2");
+        a.textContent = "Historial";
+      }
+
+      if (
+        href === "/iad/admin/training" ||
+        href === "/iad/training" ||
+        href === "/iad/trining_ia" ||
+        label === "training ia"
+      ) {
+        a.setAttribute("href", "/iad/trining-ia");
+        a.textContent = "Training IA";
+      }
+    });
+  }
+
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", rewriteNav);
+  else rewriteNav();
+
+  setTimeout(rewriteNav, 300);
+  setTimeout(rewriteNav, 1200);
+})();
+</script>
+<!-- /IAD_REPLACE_HISTORY_TRAINING_NAV_SAFE_V2 -->
+
 </body>
 </html>

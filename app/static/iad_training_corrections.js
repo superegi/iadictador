@@ -577,7 +577,8 @@
 
   function isHistoryPage() {
     var p = (window.location.pathname || "").toLowerCase();
-    return p.includes("historial") || p.includes("history");
+    if (p.includes("/iad/historial2") || p.includes("/iad/trining-ia")) return false;
+    return p === "/iad/historial" || p === "/iad/history" || p.endsWith("/history");
   }
 
   async function loadValidationHistory(root) {
@@ -1506,6 +1507,98 @@
       setTimeout(tick, 80);
     });
     obs.observe(document.documentElement || document.body, {childList: true, subtree: true});
+  } catch (e) {}
+})();
+
+
+// IAD_DISABLE_OLD_HISTORY_TRAINING_PANELS_V1
+(function () {
+  "use strict";
+
+  if (window.__iadDisableOldHistoryTrainingPanelsV1) return;
+  window.__iadDisableOldHistoryTrainingPanelsV1 = true;
+
+  function shouldClean() {
+    var p = (window.location.pathname || "").toLowerCase();
+    return p.includes("/iad/historial2") || p.includes("/iad/trining-ia");
+  }
+
+  function clean() {
+    if (!shouldClean()) return;
+
+    document.querySelectorAll("section, div").forEach(function (el) {
+      var t = (el.textContent || "").trim();
+      if (
+        t.startsWith("Historial de validaciones IA Dictador") ||
+        t.startsWith("Training / Revisiones IA") ||
+        t.includes("Cada validación queda guardada en historial y también como ejemplo para Training IA.")
+      ) {
+        el.remove();
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      setTimeout(clean, 100);
+      setTimeout(clean, 700);
+      setTimeout(clean, 1800);
+    });
+  } else {
+    setTimeout(clean, 100);
+    setTimeout(clean, 700);
+    setTimeout(clean, 1800);
+  }
+
+  try {
+    var obs = new MutationObserver(function () { setTimeout(clean, 50); });
+    obs.observe(document.documentElement || document.body, { childList: true, subtree: true });
+  } catch (e) {}
+})();
+
+
+// IAD_DISABLE_OLD_HISTORY_TRAINING_PANELS_SAFE_V2
+(function () {
+  "use strict";
+
+  if (window.__iadDisableOldHistoryTrainingPanelsSafeV2) return;
+  window.__iadDisableOldHistoryTrainingPanelsSafeV2 = true;
+
+  function active() {
+    var p = (window.location.pathname || "").toLowerCase();
+    return p.includes("/iad/historial2") || p.includes("/iad/trining-ia");
+  }
+
+  function clean() {
+    if (!active()) return;
+
+    document.querySelectorAll("section, div").forEach(function (el) {
+      var t = (el.textContent || "").trim();
+      if (
+        t.startsWith("Historial de validaciones IA Dictador") ||
+        t.startsWith("Training / Revisiones IA") ||
+        t.includes("Cada validación queda guardada en historial y también como ejemplo para Training IA.")
+      ) {
+        el.remove();
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      setTimeout(clean, 100);
+      setTimeout(clean, 700);
+      setTimeout(clean, 1800);
+    });
+  } else {
+    setTimeout(clean, 100);
+    setTimeout(clean, 700);
+    setTimeout(clean, 1800);
+  }
+
+  try {
+    var obs = new MutationObserver(function () { setTimeout(clean, 80); });
+    obs.observe(document.documentElement || document.body, { childList: true, subtree: true });
   } catch (e) {}
 })();
 

@@ -6936,3 +6936,1361 @@ def iad_training_dataset_clean_v1(limit: int = 200, db = Depends(get_db)):
         "columns": select_cols,
     }
 
+
+# IAD_HISTORY2_TRININGIA_ROUTES_V2
+# Historial2 corregido:
+# - usuario legible, no objeto User;
+# - hora ajustada +3 h por defecto para coincidir con hora local visible;
+# - detalle OT con fallback desde WorkOrder + última validación + campos crudos;
+# - mantiene Trining IA endpoints.
+
+def _iad_h2v2_text(value):
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _iad_h2v2_json(value, fallback=None):
+    import json
+    if fallback is None:
+        fallback = {}
+    if value in (None, ""):
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return fallback
+
+
+def _iad_h2v2_dt(value):
+    if value is None:
+        return ""
+
+    import os
+    import datetime
+
+    offset_hours = int(os.environ.get("IAD_HISTORY_TIME_OFFSET_HOURS", "3"))
+
+    dt = None
+
+    if isinstance(value, datetime.datetime):
+        dt = value
+    else:
+        raw = str(value).strip()
+        for fmt in [
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+        ]:
+            try:
+                dt = datetime.datetime.strptime(raw.replace("Z", ""), fmt)
+                break
+            except Exception:
+                pass
+
+    if dt is None:
+        return str(value)
+
+    try:
+        dt = dt + datetime.timedelta(hours=offset_hours)
+    except Exception:
+        pass
+
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _iad_h2v2_column_dict(obj):
+    out = {}
+    try:
+        for col in obj.__mapper__.columns:
+            key = col.key
+            try:
+                val = getattr(obj, key)
+            except Exception:
+                val = None
+            out[key] = val
+    except Exception:
+        pass
+    return out
+
+
+def _iad_h2v2_relationship_username(obj):
+    # Evita mostrar "<User object at ...>".
+    candidates = []
+
+    for attr in ["user", "usuario", "owner", "created_by_user"]:
+        try:
+            rel = getattr(obj, attr, None)
+            if rel is not None and not isinstance(rel, (str, int, float)):
+                candidates.append(rel)
+        except Exception:
+            pass
+
+    for rel in candidates:
+        for name in ["username", "usuario", "email", "name", "nombre", "login"]:
+            try:
+                v = getattr(rel, name, None)
+                if v not in (None, ""):
+                    return str(v)
+            except Exception:
+                pass
+
+    # Fallback a columnas simples.
+    cols = _iad_h2v2_column_dict(obj)
+    for k in ["username", "usuario", "user_name", "created_by", "user_id", "owner_id"]:
+        v = cols.get(k)
+        if v not in (None, ""):
+            return str(v)
+
+    return ""
+
+
+def _iad_h2v2_pick(cols, names, default=""):
+    for name in names:
+        v = cols.get(name)
+        if v not in (None, ""):
+            return v
+    return default
+
+
+def _iad_h2v2_pick_text(cols, names, default=""):
+    return _iad_h2v2_text(_iad_h2v2_pick(cols, names, default))
+
+
+def _iad_h2v2_derive_modality(cols, template="", title=""):
+    direct = _iad_h2v2_pick_text(cols, [
+        "modalidad", "modality", "tipo_modalidad", "study_modality"
+    ], "")
+    if direct:
+        return direct
+
+    hay = f"{template} {title}".lower()
+    if "tc" in hay or "tac" in hay:
+        return "TC"
+    if "rx" in hay or "radiograf" in hay:
+        return "RX"
+    if "us" in hay or "eco" in hay or "ultrason" in hay:
+        return "US"
+    if "rm" in hay or "resonancia" in hay:
+        return "RM"
+    return ""
+
+
+def _iad_h2v2_latest_validation(db, ot_id):
+    from sqlalchemy import text
+
+    try:
+        rows = db.execute(text("""
+            SELECT
+                id,
+                created_at,
+                template_name,
+                dictado_original,
+                transcripcion,
+                clinical_json,
+                informe_ia,
+                informe_validado,
+                diferencias_detectadas,
+                modelo_usado,
+                metadata_json,
+                source,
+                estado,
+                ot_id
+            FROM iad_validation_history
+            WHERE ot_id = :ot_id
+            ORDER BY id DESC
+            LIMIT 1
+        """), {"ot_id": int(ot_id)}).fetchall()
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    r = rows[0]
+    return {
+        "id": r[0],
+        "created_at": r[1],
+        "template_name": r[2],
+        "dictado_original": r[3],
+        "transcripcion": r[4],
+        "clinical_json": r[5],
+        "informe_ia": r[6],
+        "informe_validado": r[7],
+        "diferencias_detectadas": r[8],
+        "modelo_usado": r[9],
+        "metadata_json": r[10],
+        "source": r[11],
+        "estado": r[12],
+        "ot_id": r[13],
+    }
+
+
+def _iad_h2v2_workorder_row(ot, db=None):
+    cols = _iad_h2v2_column_dict(ot)
+    oid = cols.get("id")
+
+    latest = None
+    if db is not None and oid:
+        latest = _iad_h2v2_latest_validation(db, oid)
+
+    created = _iad_h2v2_pick(cols, [
+        "created_at", "timestamp", "created", "created_on", "fecha", "fecha_creacion"
+    ], "")
+
+    template = ""
+    if latest and latest.get("template_name"):
+        template = latest.get("template_name")
+    else:
+        template = _iad_h2v2_pick_text(cols, [
+            "template_name", "plantilla_nombre", "template", "plantilla"
+        ], "")
+
+    title = _iad_h2v2_pick_text(cols, [
+        "titulo", "title", "study_title", "nombre_estudio", "exam_name", "study_name", "description", "tipo", "study_type", "exam_type"
+    ], "")
+
+    if not title:
+        title = template or f"OT #{oid}"
+
+    modality = _iad_h2v2_derive_modality(cols, template=template, title=title)
+
+    final_report = ""
+    review_report = ""
+
+    if latest:
+        final_report = latest.get("informe_validado") or ""
+        review_report = latest.get("diferencias_detectadas") or ""
+
+    if not final_report:
+        final_report = _iad_h2v2_pick_text(cols, [
+            "final_report_accepted", "final_report", "resultado_final", "resultado", "informe_final"
+        ], "")
+
+    if not review_report:
+        review_report = _iad_h2v2_pick_text(cols, [
+            "review_report", "final_report_diff", "revision", "revisión", "review"
+        ], "")
+
+    return {
+        "id": oid,
+        "ot_id": oid,
+        "hora": _iad_h2v2_dt(created),
+        "hora_raw": _iad_h2v2_text(created),
+        "usuario": _iad_h2v2_relationship_username(ot),
+        "modalidad": modality,
+        "nombre_estudio": title,
+        "paciente": _iad_h2v2_pick_text(cols, [
+            "paciente", "patient", "patient_name", "nombre_paciente"
+        ], ""),
+        "estado": _iad_h2v2_pick_text(cols, ["status", "estado", "state"], ""),
+        "plantilla": template,
+        "tiene_informe": bool(str(final_report or "").strip()),
+        "tiene_revision": bool(str(review_report or "").strip()),
+        "link": f"/iad/historial2/ot/{oid}",
+    }
+
+
+def _iad_h2v2_raw_fields(cols):
+    out = []
+    skip = set(["password", "hashed_password", "token", "secret"])
+    for k, v in cols.items():
+        if k.lower() in skip:
+            continue
+        if v in (None, ""):
+            continue
+        sv = str(v)
+        if len(sv) > 5000:
+            sv = sv[:5000] + "\n...[truncado]"
+        out.append({"campo": k, "valor": sv})
+    return out
+
+
+def _iad_h2v2_workorder_detail(ot, db):
+    cols = _iad_h2v2_column_dict(ot)
+    row = _iad_h2v2_workorder_row(ot, db=db)
+    latest = _iad_h2v2_latest_validation(db, row.get("ot_id")) if row.get("ot_id") else None
+
+    metadata = _iad_h2v2_json(latest.get("metadata_json") if latest else None, fallback={})
+    clinical = _iad_h2v2_json(latest.get("clinical_json") if latest else None, fallback={})
+
+    texto_origen = ""
+    extraccion_ia = ""
+    propuesta_ia = ""
+    revision = ""
+    resultado_final = ""
+
+    if latest:
+        texto_origen = latest.get("transcripcion") or latest.get("dictado_original") or ""
+        extraccion_ia = latest.get("clinical_json") or ""
+        propuesta_ia = latest.get("informe_ia") or ""
+        revision = latest.get("diferencias_detectadas") or ""
+        resultado_final = latest.get("informe_validado") or ""
+
+    if not texto_origen:
+        texto_origen = _iad_h2v2_pick_text(cols, [
+            "transcripcion", "transcription", "dictado_original", "source_text", "texto_origen", "input_text", "audio_text", "raw_text"
+        ], "")
+
+    if not extraccion_ia:
+        extraccion_ia = _iad_h2v2_pick_text(cols, [
+            "extraction_json", "structured_json", "clinical_json", "json_ia", "ai_json", "metadata_json"
+        ], "")
+
+    if not propuesta_ia:
+        propuesta_ia = _iad_h2v2_pick_text(cols, [
+            "final_report_initial", "informe_ia", "resultado_inicial", "resultado_ia", "model_report"
+        ], "")
+
+    if not revision:
+        revision = _iad_h2v2_pick_text(cols, [
+            "review_report", "final_report_diff", "revision", "revisión", "review"
+        ], "")
+
+    if not resultado_final:
+        resultado_final = _iad_h2v2_pick_text(cols, [
+            "final_report_accepted", "final_report", "resultado_final", "resultado", "informe_final"
+        ], "")
+
+    row.update({
+        "tipo": _iad_h2v2_pick_text(cols, ["tipo", "type", "study_type", "exam_type"], ""),
+        "titulo": _iad_h2v2_pick_text(cols, ["titulo", "title", "study_title", "nombre_estudio"], ""),
+        "edad": _iad_h2v2_pick_text(cols, ["edad", "age", "patient_age"], ""),
+        "texto_origen": texto_origen,
+        "extraccion_ia": extraccion_ia,
+        "propuesta_ia": propuesta_ia,
+        "revision": revision,
+        "resultado_final": resultado_final,
+        "latest_validation": latest or {},
+        "metadata": metadata,
+        "clinical": clinical,
+        "raw_fields": _iad_h2v2_raw_fields(cols),
+    })
+
+    return row
+
+
+def _iad_h2v2_db_cols(db, table_name):
+    from sqlalchemy import text
+    try:
+        dialect = db.bind.dialect.name
+    except Exception:
+        dialect = "unknown"
+
+    try:
+        if dialect == "postgresql":
+            rows = db.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = :t
+                ORDER BY ordinal_position
+            """), {"t": table_name}).fetchall()
+            return [r[0] for r in rows]
+        rows = db.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+        return [r[1] for r in rows]
+    except Exception:
+        return []
+
+
+def _iad_h2v2_ensure_training_tables(db):
+    try:
+        _iad_v5_ensure_tables(db)
+        return
+    except Exception:
+        pass
+    try:
+        _iad_v4_ensure_tables_and_ot_id(db)
+        return
+    except Exception:
+        pass
+    try:
+        _iad_validation_v3_ensure_tables(db)
+        return
+    except Exception:
+        pass
+
+
+def _iad_h2v2_diff_metrics(diff_text):
+    diff_text = _iad_h2v2_text(diff_text)
+    lines = [ln for ln in diff_text.splitlines() if ln.strip()]
+    changed = [
+        ln for ln in lines
+        if (ln.startswith("+") or ln.startswith("-"))
+        and not ln.startswith("+++")
+        and not ln.startswith("---")
+    ]
+    added = [ln for ln in changed if ln.startswith("+")]
+    removed = [ln for ln in changed if ln.startswith("-")]
+    return {"lineas_diff": len(lines), "cambios": len(changed), "agregadas": len(added), "eliminadas": len(removed)}
+
+
+def _iad_h2v2_extract_tags(clinical, metadata):
+    tags = []
+
+    def add(x):
+        if x is None:
+            return
+        if isinstance(x, dict):
+            parts = []
+            for k in ["organo_o_region", "region", "organo", "lateralidad", "side", "hallazgo", "finding", "medida", "size", "interpretacion"]:
+                v = x.get(k)
+                if v not in (None, ""):
+                    parts.append(str(v))
+            tags.append(" · ".join(parts) if parts else str(x))
+        else:
+            sx = str(x).strip()
+            if sx:
+                tags.append(sx)
+
+    for src in [clinical, metadata]:
+        if isinstance(src, list):
+            for x in src:
+                add(x)
+        elif isinstance(src, dict):
+            for key in ["tags", "hallazgos", "findings", "hallazgos_estructurados", "structured_findings", "mapa_aplicacion"]:
+                val = src.get(key)
+                if isinstance(val, list):
+                    for x in val:
+                        add(x)
+
+    out, seen = [], set()
+    for t in tags:
+        k = t.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(t)
+    return out
+
+
+def _iad_h2v2_extract_conflicts(metadata):
+    conflicts = []
+    if isinstance(metadata, dict):
+        for key in ["advertencias", "warnings", "posibles_omisiones", "conflictos", "conflict_points", "puntos_conflictivos"]:
+            val = metadata.get(key)
+            if isinstance(val, list):
+                conflicts.extend([str(x) for x in val if str(x).strip()])
+            elif isinstance(val, str) and val.strip():
+                conflicts.append(val.strip())
+
+        for key in ["exam_type_guard", "clean_writer", "stable_writer_v2", "ap_safe_impression_v2", "ap_style_rules"]:
+            val = metadata.get(key)
+            if isinstance(val, dict) and val:
+                conflicts.append(f"{key}: {val}")
+
+    out, seen = [], set()
+    for c in conflicts:
+        k = c.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(c)
+    return out
+
+
+def _iad_h2v2_ai_version(metadata, source, model):
+    if isinstance(metadata, dict):
+        for key in ["version_ia", "ai_version", "metodo", "method"]:
+            val = metadata.get(key)
+            if val:
+                return str(val)
+        markers = []
+        for key in ["stable_writer_v2", "clean_writer", "exam_type_guard", "ap_style_rules", "ap_safe_impression_v2"]:
+            val = metadata.get(key)
+            if isinstance(val, dict) and val.get("active"):
+                markers.append(key)
+        if markers:
+            return "+".join(markers)
+    return str(source or model or "")
+
+
+def _iad_h2v2_training_row(raw):
+    clinical = _iad_h2v2_json(raw.get("clinical_json"), fallback={})
+    metadata = _iad_h2v2_json(raw.get("metadata_json"), fallback={})
+    diff = raw.get("diferencias_detectadas") or ""
+    metrics = _iad_h2v2_diff_metrics(diff)
+    model = raw.get("modelo_usado") or ""
+    source = raw.get("source") or ""
+
+    return {
+        "id": raw.get("id"),
+        "hora": _iad_h2v2_dt(raw.get("created_at")),
+        "hora_raw": _iad_h2v2_text(raw.get("created_at")),
+        "ot_id": raw.get("ot_id"),
+        "modelo_ia_utilizado": model,
+        "version_ia": _iad_h2v2_ai_version(metadata, source, model),
+        "plantilla": raw.get("template_name") or "",
+        "diff_numerico": metrics,
+        "diff_cambios": metrics["cambios"],
+        "texto_transcrito_literal": raw.get("transcripcion") or raw.get("dictado_original") or "",
+        "tags_importantes_reconocidos": _iad_h2v2_extract_tags(clinical, metadata),
+        "plantilla_a_utilizar": raw.get("template_name") or "",
+        "propuesta_ia": raw.get("informe_ia") or "",
+        "puntos_conflictivos_detectados": _iad_h2v2_extract_conflicts(metadata),
+        "version_final_guardada_usuario": raw.get("informe_corregido") or "",
+        "diff": diff,
+        "metadata": metadata,
+        "clinical_json": clinical,
+    }
+
+
+def _iad_h2v2_training_select(db, limit=500, ids=None):
+    from sqlalchemy import text
+    _iad_h2v2_ensure_training_tables(db)
+
+    cols = _iad_h2v2_db_cols(db, "iad_training_corrections")
+    if not cols:
+        return []
+
+    wanted = ["id", "created_at", "ot_id", "usuario", "template_name", "dictado_original", "transcripcion", "clinical_json", "informe_ia", "informe_corregido", "diferencias_detectadas", "modelo_usado", "metadata_json", "source"]
+    select_cols = [c for c in wanted if c in cols]
+    if "id" not in select_cols:
+        return []
+
+    if ids:
+        ids = [int(x) for x in ids]
+        placeholders = ", ".join([f":id{i}" for i in range(len(ids))])
+        sql = f"SELECT {', '.join(select_cols)} FROM iad_training_corrections WHERE id IN ({placeholders}) ORDER BY id DESC"
+        params = {f"id{i}": v for i, v in enumerate(ids)}
+    else:
+        limit = max(1, min(int(limit or 500), 2000))
+        sql = f"SELECT {', '.join(select_cols)} FROM iad_training_corrections ORDER BY id DESC LIMIT :limit"
+        params = {"limit": limit}
+
+    rows = db.execute(text(sql), params).fetchall()
+    raw_items = [dict(zip(select_cols, row)) for row in rows]
+    return [_iad_h2v2_training_row(raw) for raw in raw_items]
+
+
+@router.get("/iad/historial2")
+def iad_historial2_page_v2(request: Request):
+    return templates.TemplateResponse("iadictador/historial2.html", {"request": request})
+
+
+@router.get("/iad/historial2/ot/{ot_id}")
+def iad_historial2_ot_page_v2(request: Request, ot_id: int, db = Depends(get_db)):
+    try:
+        ot = db.query(WorkOrder).filter(WorkOrder.id == int(ot_id)).first()
+    except Exception:
+        ot = None
+    item = _iad_h2v2_workorder_detail(ot, db) if ot else None
+    return templates.TemplateResponse("iadictador/historial2_ot.html", {"request": request, "ot_id": ot_id, "item": item})
+
+
+@router.get("/iad/api/historial2/ots.json")
+def iad_api_historial2_ots_v2(limit: int = 500, db = Depends(get_db)):
+    limit = max(1, min(int(limit or 500), 2000))
+    try:
+        rows = db.query(WorkOrder).order_by(WorkOrder.id.desc()).limit(limit).all()
+    except Exception as e:
+        return {"ok": False, "error": str(e), "items": [], "count": 0}
+    items = [_iad_h2v2_workorder_row(ot, db=db) for ot in rows]
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@router.get("/iad/api/historial2/ot/{ot_id}.json")
+def iad_api_historial2_ot_v2(ot_id: int, db = Depends(get_db)):
+    try:
+        ot = db.query(WorkOrder).filter(WorkOrder.id == int(ot_id)).first()
+    except Exception as e:
+        return {"ok": False, "found": False, "error": str(e)}
+    if not ot:
+        return {"ok": True, "found": False, "ot_id": ot_id}
+    return {"ok": True, "found": True, "item": _iad_h2v2_workorder_detail(ot, db)}
+
+
+@router.get("/iad/trining-ia")
+def iad_trining_ia_page_v2(request: Request):
+    return templates.TemplateResponse("iadictador/trining_ia.html", {"request": request})
+
+
+@router.get("/iad/trining-ia/{training_id}")
+def iad_trining_ia_detail_page_v2(request: Request, training_id: int, db = Depends(get_db)):
+    items = _iad_h2v2_training_select(db, ids=[training_id])
+    item = items[0] if items else None
+    return templates.TemplateResponse("iadictador/trining_ia_detail.html", {"request": request, "training_id": training_id, "item": item})
+
+
+@router.get("/iad/api/trining-ia/items.json")
+def iad_api_trining_ia_items_v2(limit: int = 500, db = Depends(get_db)):
+    items = _iad_h2v2_training_select(db, limit=limit)
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@router.get("/iad/api/trining-ia/item/{training_id}.json")
+def iad_api_trining_ia_item_v2(training_id: int, db = Depends(get_db)):
+    items = _iad_h2v2_training_select(db, ids=[training_id])
+    if not items:
+        return {"ok": True, "found": False, "id": training_id}
+    return {"ok": True, "found": True, "item": items[0]}
+
+
+@router.post("/iad/api/trining-ia/delete.json")
+async def iad_api_trining_ia_delete_v2(request: Request, db = Depends(get_db)):
+    from sqlalchemy import text
+    payload = await request.json()
+    ids = payload.get("ids") or []
+    clean_ids = []
+    for x in ids:
+        try:
+            clean_ids.append(int(x))
+        except Exception:
+            pass
+    if not clean_ids:
+        return {"ok": False, "error": "Sin IDs válidos"}
+    placeholders = ", ".join([f":id{i}" for i in range(len(clean_ids))])
+    params = {f"id{i}": v for i, v in enumerate(clean_ids)}
+    try:
+        db.execute(text(f"DELETE FROM iad_training_corrections WHERE id IN ({placeholders})"), params)
+        db.commit()
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "deleted": len(clean_ids), "ids": clean_ids}
+
+
+# IAD_HISTORY2_WORKITEMS_ROUTES_V1
+# Historial2 ahora usa tabla propia de trabajos generados:
+# iad_history2_work_items
+# Esto no depende de que el flujo cree una OT antigua.
+
+def _iad_h2wi_json_dumps(value):
+    import json
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        return str(value)
+
+
+def _iad_h2wi_json_loads(value, fallback=None):
+    import json
+    if fallback is None:
+        fallback = {}
+    if value in (None, ""):
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return fallback
+
+
+def _iad_h2wi_username(request):
+    try:
+        sess = getattr(request, "session", None)
+        if isinstance(sess, dict):
+            return sess.get("username") or sess.get("user") or sess.get("usuario") or sess.get("email") or "unknown"
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _iad_h2wi_dt(value):
+    if value is None:
+        return ""
+
+    import os
+    import datetime
+
+    # La BD actual está 3 h adelantada respecto al login visible.
+    offset_hours = int(os.environ.get("IAD_HISTORY2_TIME_OFFSET_HOURS", "-3"))
+
+    dt = None
+
+    if isinstance(value, datetime.datetime):
+        dt = value
+    else:
+        raw = str(value).strip().replace("Z", "")
+        for fmt in [
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+        ]:
+            try:
+                dt = datetime.datetime.strptime(raw, fmt)
+                break
+            except Exception:
+                pass
+
+    if dt is None:
+        return str(value)
+
+    try:
+        dt = dt + datetime.timedelta(hours=offset_hours)
+    except Exception:
+        pass
+
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _iad_h2wi_table_cols(db, table):
+    from sqlalchemy import text
+
+    try:
+        dialect = db.bind.dialect.name
+    except Exception:
+        dialect = "unknown"
+
+    try:
+        if dialect == "postgresql":
+            rows = db.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = :t
+                ORDER BY ordinal_position
+            """), {"t": table}).fetchall()
+            return [r[0] for r in rows]
+
+        rows = db.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        return [r[1] for r in rows]
+    except Exception:
+        return []
+
+
+def _iad_h2wi_ensure_table(db):
+    from sqlalchemy import text
+
+    try:
+        dialect = db.bind.dialect.name
+    except Exception:
+        dialect = "unknown"
+
+    pk = "SERIAL PRIMARY KEY" if dialect == "postgresql" else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    db.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS iad_history2_work_items (
+            id {pk},
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            usuario TEXT,
+            modalidad TEXT,
+            nombre_estudio TEXT,
+            paciente TEXT,
+            estado TEXT,
+            ot_id INTEGER,
+            training_id INTEGER,
+            template_name TEXT,
+            modelo_ia TEXT,
+            version_ia TEXT,
+            transcripcion TEXT,
+            tags_json TEXT,
+            clinical_json TEXT,
+            propuesta_ia TEXT,
+            puntos_conflictivos_json TEXT,
+            version_final_usuario TEXT,
+            diff TEXT,
+            metadata_json TEXT,
+            source TEXT,
+            source_ref TEXT
+        )
+    """))
+
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+
+def _iad_h2wi_int(value):
+    try:
+        if value in (None, "", "null", "undefined"):
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _iad_h2wi_text(value):
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _iad_h2wi_extract_tags(payload):
+    tags = []
+
+    def add(x):
+        if x is None:
+            return
+        if isinstance(x, dict):
+            parts = []
+            for k in [
+                "organo_o_region", "region", "organo", "lateralidad", "side",
+                "hallazgo", "finding", "medida", "size", "interpretacion"
+            ]:
+                v = x.get(k)
+                if v not in (None, ""):
+                    parts.append(str(v))
+            if parts:
+                tags.append(" · ".join(parts))
+            else:
+                tags.append(str(x))
+        else:
+            sx = str(x).strip()
+            if sx:
+                tags.append(sx)
+
+    if isinstance(payload, dict):
+        for key in ["tags", "hallazgos_estructurados", "structured_findings", "mapa_aplicacion"]:
+            val = payload.get(key)
+            if isinstance(val, list):
+                for x in val:
+                    add(x)
+
+        meta = payload.get("metadata_json")
+        if isinstance(meta, dict):
+            for key in ["tags", "hallazgos_estructurados", "structured_findings"]:
+                val = meta.get(key)
+                if isinstance(val, list):
+                    for x in val:
+                        add(x)
+
+    out = []
+    seen = set()
+    for t in tags:
+        k = t.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(t)
+    return out
+
+
+def _iad_h2wi_extract_conflicts(payload):
+    conflicts = []
+    if isinstance(payload, dict):
+        for key in [
+            "advertencias", "warnings", "posibles_omisiones", "conflictos",
+            "puntos_conflictivos", "conflict_points"
+        ]:
+            val = payload.get(key)
+            if isinstance(val, list):
+                conflicts.extend([str(x) for x in val if str(x).strip()])
+            elif isinstance(val, str) and val.strip():
+                conflicts.append(val.strip())
+
+        meta = payload.get("metadata_json")
+        if isinstance(meta, dict):
+            for key in ["advertencias", "warnings", "posibles_omisiones", "conflictos"]:
+                val = meta.get(key)
+                if isinstance(val, list):
+                    conflicts.extend([str(x) for x in val if str(x).strip()])
+                elif isinstance(val, str) and val.strip():
+                    conflicts.append(val.strip())
+
+    out = []
+    seen = set()
+    for c in conflicts:
+        k = c.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(c)
+    return out
+
+
+def _iad_h2wi_diff_metrics(diff_text):
+    diff_text = _iad_h2wi_text(diff_text)
+    lines = [ln for ln in diff_text.splitlines() if ln.strip()]
+    changed = [
+        ln for ln in lines
+        if (ln.startswith("+") or ln.startswith("-"))
+        and not ln.startswith("+++")
+        and not ln.startswith("---")
+    ]
+    added = [ln for ln in changed if ln.startswith("+")]
+    removed = [ln for ln in changed if ln.startswith("-")]
+    return {
+        "lineas_diff": len(lines),
+        "cambios": len(changed),
+        "agregadas": len(added),
+        "eliminadas": len(removed),
+    }
+
+
+def _iad_h2wi_row_to_item(row):
+    # row es tuple con orden fijo de SELECT.
+    (
+        id_, created_at, updated_at, usuario, modalidad, nombre_estudio, paciente,
+        estado, ot_id, training_id, template_name, modelo_ia, version_ia,
+        transcripcion, tags_json, clinical_json, propuesta_ia,
+        puntos_conflictivos_json, version_final_usuario, diff,
+        metadata_json, source, source_ref
+    ) = row
+
+    tags = _iad_h2wi_json_loads(tags_json, fallback=[])
+    conflicts = _iad_h2wi_json_loads(puntos_conflictivos_json, fallback=[])
+    clinical = _iad_h2wi_json_loads(clinical_json, fallback={})
+    metadata = _iad_h2wi_json_loads(metadata_json, fallback={})
+
+    return {
+        "id": id_,
+        "hora": _iad_h2wi_dt(created_at),
+        "hora_raw": _iad_h2wi_text(created_at),
+        "updated_at": _iad_h2wi_dt(updated_at),
+        "usuario": usuario or "",
+        "modalidad": modalidad or "",
+        "nombre_estudio": nombre_estudio or template_name or f"Trabajo #{id_}",
+        "paciente": paciente or "",
+        "estado": estado or "",
+        "ot_id": ot_id,
+        "training_id": training_id,
+        "template_name": template_name or "",
+        "modelo_ia": modelo_ia or "",
+        "version_ia": version_ia or "",
+        "transcripcion": transcripcion or "",
+        "tags": tags,
+        "clinical_json": clinical,
+        "propuesta_ia": propuesta_ia or "",
+        "puntos_conflictivos": conflicts,
+        "version_final_usuario": version_final_usuario or "",
+        "diff": diff or "",
+        "diff_numerico": _iad_h2wi_diff_metrics(diff or ""),
+        "metadata": metadata,
+        "source": source or "",
+        "source_ref": source_ref or "",
+        "tiene_informe": bool(str(version_final_usuario or propuesta_ia or "").strip()),
+        "tiene_revision": bool(str(diff or "").strip()),
+        "link": f"/iad/historial2/w/{id_}",
+    }
+
+
+def _iad_h2wi_select_all(db, limit=1000):
+    from sqlalchemy import text
+
+    _iad_h2wi_ensure_table(db)
+
+    limit = max(1, min(int(limit or 1000), 3000))
+
+    rows = db.execute(text("""
+        SELECT
+            id, created_at, updated_at, usuario, modalidad, nombre_estudio, paciente,
+            estado, ot_id, training_id, template_name, modelo_ia, version_ia,
+            transcripcion, tags_json, clinical_json, propuesta_ia,
+            puntos_conflictivos_json, version_final_usuario, diff,
+            metadata_json, source, source_ref
+        FROM iad_history2_work_items
+        ORDER BY id DESC
+        LIMIT :limit
+    """), {"limit": limit}).fetchall()
+
+    return [_iad_h2wi_row_to_item(r) for r in rows]
+
+
+def _iad_h2wi_select_one(db, item_id):
+    from sqlalchemy import text
+
+    _iad_h2wi_ensure_table(db)
+
+    row = db.execute(text("""
+        SELECT
+            id, created_at, updated_at, usuario, modalidad, nombre_estudio, paciente,
+            estado, ot_id, training_id, template_name, modelo_ia, version_ia,
+            transcripcion, tags_json, clinical_json, propuesta_ia,
+            puntos_conflictivos_json, version_final_usuario, diff,
+            metadata_json, source, source_ref
+        FROM iad_history2_work_items
+        WHERE id = :id
+        LIMIT 1
+    """), {"id": int(item_id)}).fetchone()
+
+    if not row:
+        return None
+    return _iad_h2wi_row_to_item(row)
+
+
+def _iad_h2wi_save_payload(db, request, payload):
+    from sqlalchemy import text
+    import datetime
+
+    _iad_h2wi_ensure_table(db)
+
+    item_id = _iad_h2wi_int(payload.get("work_item_id") or payload.get("id"))
+    usuario = payload.get("usuario") or _iad_h2wi_username(request)
+
+    template_name = (
+        payload.get("template_name")
+        or payload.get("plantilla_nombre")
+        or payload.get("plantilla")
+        or ""
+    )
+
+    modalidad = payload.get("modalidad") or payload.get("modality") or ""
+    if not modalidad:
+        hay = f"{template_name} {payload.get('nombre_estudio') or ''}".lower()
+        if "tc" in hay or "tac" in hay:
+            modalidad = "TC"
+        elif "rx" in hay:
+            modalidad = "RX"
+        elif "us" in hay or "eco" in hay:
+            modalidad = "US"
+        elif "rm" in hay:
+            modalidad = "RM"
+
+    nombre_estudio = (
+        payload.get("nombre_estudio")
+        or payload.get("study_name")
+        or template_name
+        or "Trabajo IA"
+    )
+
+    estado = payload.get("estado") or "generada"
+    ot_id = _iad_h2wi_int(payload.get("ot_id"))
+    training_id = _iad_h2wi_int(payload.get("training_id"))
+
+    modelo_ia = payload.get("modelo_ia") or payload.get("modelo_usado") or payload.get("model") or ""
+    version_ia = payload.get("version_ia") or payload.get("metodo") or payload.get("method") or ""
+
+    transcripcion = payload.get("transcripcion") or payload.get("transcription") or payload.get("dictado_original") or ""
+    propuesta_ia = payload.get("propuesta_ia") or payload.get("informe_ia") or payload.get("informe_final") or payload.get("final_report") or ""
+    final_usuario = payload.get("version_final_usuario") or payload.get("informe_validado") or payload.get("informe_corregido") or ""
+    diff = payload.get("diff") or payload.get("diferencias_detectadas") or ""
+
+    clinical = payload.get("clinical_json") or payload.get("hallazgos_estructurados") or {}
+    metadata = payload.get("metadata_json") or payload
+
+    tags = payload.get("tags_importantes_reconocidos")
+    if not isinstance(tags, list):
+        tags = _iad_h2wi_extract_tags(payload)
+
+    conflicts = payload.get("puntos_conflictivos_detectados")
+    if not isinstance(conflicts, list):
+        conflicts = _iad_h2wi_extract_conflicts(payload)
+
+    source = payload.get("source") or "frontend_audio_first"
+    source_ref = payload.get("source_ref") or ""
+
+    now = datetime.datetime.utcnow()
+
+    if item_id:
+        db.execute(text("""
+            UPDATE iad_history2_work_items
+            SET
+                updated_at = :updated_at,
+                usuario = COALESCE(NULLIF(:usuario, ''), usuario),
+                modalidad = COALESCE(NULLIF(:modalidad, ''), modalidad),
+                nombre_estudio = COALESCE(NULLIF(:nombre_estudio, ''), nombre_estudio),
+                paciente = COALESCE(NULLIF(:paciente, ''), paciente),
+                estado = COALESCE(NULLIF(:estado, ''), estado),
+                ot_id = COALESCE(:ot_id, ot_id),
+                training_id = COALESCE(:training_id, training_id),
+                template_name = COALESCE(NULLIF(:template_name, ''), template_name),
+                modelo_ia = COALESCE(NULLIF(:modelo_ia, ''), modelo_ia),
+                version_ia = COALESCE(NULLIF(:version_ia, ''), version_ia),
+                transcripcion = COALESCE(NULLIF(:transcripcion, ''), transcripcion),
+                tags_json = COALESCE(NULLIF(:tags_json, ''), tags_json),
+                clinical_json = COALESCE(NULLIF(:clinical_json, ''), clinical_json),
+                propuesta_ia = COALESCE(NULLIF(:propuesta_ia, ''), propuesta_ia),
+                puntos_conflictivos_json = COALESCE(NULLIF(:puntos_conflictivos_json, ''), puntos_conflictivos_json),
+                version_final_usuario = COALESCE(NULLIF(:version_final_usuario, ''), version_final_usuario),
+                diff = COALESCE(NULLIF(:diff, ''), diff),
+                metadata_json = COALESCE(NULLIF(:metadata_json, ''), metadata_json),
+                source = COALESCE(NULLIF(:source, ''), source),
+                source_ref = COALESCE(NULLIF(:source_ref, ''), source_ref)
+            WHERE id = :id
+        """), {
+            "id": item_id,
+            "updated_at": now,
+            "usuario": usuario,
+            "modalidad": modalidad,
+            "nombre_estudio": nombre_estudio,
+            "paciente": payload.get("paciente") or "",
+            "estado": estado,
+            "ot_id": ot_id,
+            "training_id": training_id,
+            "template_name": template_name,
+            "modelo_ia": modelo_ia,
+            "version_ia": version_ia,
+            "transcripcion": transcripcion,
+            "tags_json": _iad_h2wi_json_dumps(tags),
+            "clinical_json": _iad_h2wi_json_dumps(clinical),
+            "propuesta_ia": propuesta_ia,
+            "puntos_conflictivos_json": _iad_h2wi_json_dumps(conflicts),
+            "version_final_usuario": final_usuario,
+            "diff": diff,
+            "metadata_json": _iad_h2wi_json_dumps(metadata),
+            "source": source,
+            "source_ref": source_ref,
+        })
+        db.commit()
+        return _iad_h2wi_select_one(db, item_id)
+
+    db.execute(text("""
+        INSERT INTO iad_history2_work_items (
+            usuario, modalidad, nombre_estudio, paciente, estado,
+            ot_id, training_id, template_name, modelo_ia, version_ia,
+            transcripcion, tags_json, clinical_json, propuesta_ia,
+            puntos_conflictivos_json, version_final_usuario, diff,
+            metadata_json, source, source_ref
+        )
+        VALUES (
+            :usuario, :modalidad, :nombre_estudio, :paciente, :estado,
+            :ot_id, :training_id, :template_name, :modelo_ia, :version_ia,
+            :transcripcion, :tags_json, :clinical_json, :propuesta_ia,
+            :puntos_conflictivos_json, :version_final_usuario, :diff,
+            :metadata_json, :source, :source_ref
+        )
+    """), {
+        "usuario": usuario,
+        "modalidad": modalidad,
+        "nombre_estudio": nombre_estudio,
+        "paciente": payload.get("paciente") or "",
+        "estado": estado,
+        "ot_id": ot_id,
+        "training_id": training_id,
+        "template_name": template_name,
+        "modelo_ia": modelo_ia,
+        "version_ia": version_ia,
+        "transcripcion": transcripcion,
+        "tags_json": _iad_h2wi_json_dumps(tags),
+        "clinical_json": _iad_h2wi_json_dumps(clinical),
+        "propuesta_ia": propuesta_ia,
+        "puntos_conflictivos_json": _iad_h2wi_json_dumps(conflicts),
+        "version_final_usuario": final_usuario,
+        "diff": diff,
+        "metadata_json": _iad_h2wi_json_dumps(metadata),
+        "source": source,
+        "source_ref": source_ref,
+    })
+    db.commit()
+
+    # Último ID portable SQLite/Postgres: basta listar último del usuario/source.
+    rows = _iad_h2wi_select_all(db, limit=1)
+    return rows[0] if rows else None
+
+
+def _iad_h2wi_backfill_from_training(db, limit=200):
+    from sqlalchemy import text
+
+    _iad_h2wi_ensure_table(db)
+
+    try:
+        _iad_h2v2_ensure_training_tables(db)
+        rows = db.execute(text("""
+            SELECT
+                id, created_at, ot_id, usuario, template_name,
+                dictado_original, transcripcion, clinical_json, informe_ia,
+                informe_corregido, diferencias_detectadas, modelo_usado,
+                metadata_json, source
+            FROM iad_training_corrections
+            ORDER BY id DESC
+            LIMIT :limit
+        """), {"limit": limit}).fetchall()
+    except Exception:
+        return {"created": 0, "error": "no training table"}
+
+    created = 0
+
+    for r in rows:
+        source_ref = f"training:{r[0]}"
+
+        exists = db.execute(text("""
+            SELECT id FROM iad_history2_work_items
+            WHERE source_ref = :source_ref
+            LIMIT 1
+        """), {"source_ref": source_ref}).fetchone()
+
+        if exists:
+            continue
+
+        clinical = _iad_h2wi_json_loads(r[7], fallback={})
+        metadata = _iad_h2wi_json_loads(r[12], fallback={})
+
+        payload = {
+            "usuario": r[3],
+            "template_name": r[4],
+            "nombre_estudio": r[4] or f"Training #{r[0]}",
+            "estado": "validada" if r[9] else "generada",
+            "ot_id": r[2],
+            "training_id": r[0],
+            "modelo_ia": r[11],
+            "version_ia": r[13],
+            "transcripcion": r[6] or r[5],
+            "clinical_json": clinical,
+            "informe_ia": r[8],
+            "informe_validado": r[9],
+            "diff": r[10],
+            "metadata_json": metadata,
+            "source": "backfill_training",
+            "source_ref": source_ref,
+        }
+        item = _iad_h2wi_save_payload(db, type("Req", (), {"session": {}})(), payload)
+        if item:
+            created += 1
+
+    return {"created": created}
+
+
+@router.get("/iad/historial2")
+def iad_historial2_page_workitems_v1(request: Request):
+    return templates.TemplateResponse("iadictador/historial2.html", {"request": request})
+
+
+@router.get("/iad/historial2/w/{item_id}")
+def iad_historial2_workitem_page_v1(request: Request, item_id: int, db = Depends(get_db)):
+    item = _iad_h2wi_select_one(db, item_id)
+    return templates.TemplateResponse("iadictador/historial2_workitem.html", {
+        "request": request,
+        "item_id": item_id,
+        "item": item,
+    })
+
+
+@router.get("/iad/api/historial2/workitems.json")
+def iad_api_historial2_workitems_v1(limit: int = 1000, db = Depends(get_db)):
+    _iad_h2wi_backfill_from_training(db, limit=300)
+    items = _iad_h2wi_select_all(db, limit=limit)
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@router.get("/iad/api/historial2/workitem/{item_id}.json")
+def iad_api_historial2_workitem_v1(item_id: int, db = Depends(get_db)):
+    item = _iad_h2wi_select_one(db, item_id)
+    if not item:
+        return {"ok": True, "found": False, "id": item_id}
+    return {"ok": True, "found": True, "item": item}
+
+
+@router.post("/iad/api/historial2/workitems/save.json")
+async def iad_api_historial2_workitems_save_v1(request: Request, db = Depends(get_db)):
+    payload = await request.json()
+    item = _iad_h2wi_save_payload(db, request, payload)
+    if not item:
+        return {"ok": False, "error": "No se pudo guardar work item"}
+    return {"ok": True, "item": item}
+
+
+# IAD_RESPONSIBILITY_SAVE_ENRICH_V2
+# Enriquecimiento seguro de guardados con responsable técnico.
+# Evita depender de parches complejos en JS.
+# No guarda razonamiento interno; solo traza pública: provider, modelo, proceso, etapas, prompt/schema IDs.
+
+def _iad_respsave_json_loads_v2(value, fallback=None):
+    import json
+    if fallback is None:
+        fallback = {}
+    if value in (None, ""):
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return fallback
+
+
+def _iad_respsave_first_v2(*values):
+    for v in values:
+        if v not in (None, ""):
+            return v
+    return ""
+
+
+def _iad_respsave_from_payload_v2(payload):
+    if not isinstance(payload, dict):
+        return payload
+
+    meta = payload.get("metadata_json")
+    meta = _iad_respsave_json_loads_v2(meta, fallback={}) if not isinstance(meta, dict) else meta
+
+    # Si no hay metadata_json, a veces el payload completo ES la metadata.
+    search = [payload, meta]
+
+    resp = {}
+    for src in search:
+        if isinstance(src, dict) and isinstance(src.get("responsable_ia"), dict):
+            resp = src.get("responsable_ia")
+            break
+
+    modelo = _iad_respsave_first_v2(
+        payload.get("modelo_ia"),
+        payload.get("modelo_usado"),
+        payload.get("model"),
+        resp.get("modelo"),
+        resp.get("model"),
+        "modelo_no_registrado"
+    )
+
+    proceso = _iad_respsave_first_v2(
+        payload.get("version_ia"),
+        payload.get("proceso_responsable"),
+        payload.get("metodo"),
+        payload.get("method"),
+        resp.get("proceso"),
+        payload.get("source"),
+        "proceso_no_registrado"
+    )
+
+    provider = _iad_respsave_first_v2(
+        payload.get("provider"),
+        resp.get("provider"),
+        "provider_no_registrado"
+    )
+
+    # Completar campos que usan Historial2 y Training.
+    payload["modelo_ia"] = modelo
+    payload["modelo_usado"] = modelo
+    payload["model"] = modelo
+
+    payload["version_ia"] = proceso
+    payload["proceso_responsable"] = proceso
+    payload["metodo"] = payload.get("metodo") or proceso
+
+    if not isinstance(resp, dict) or not resp:
+        resp = {
+            "provider": provider,
+            "modelo": modelo,
+            "proceso": proceso,
+            "prompt_schema_ids": payload.get("prompt_trace_publico") or [],
+            "etapas": payload.get("etapas_responsables") or [],
+            "nota": "Traza pública reconstruida al guardar. No contiene razonamiento interno."
+        }
+
+    payload["responsable_ia"] = resp
+
+    if isinstance(meta, dict):
+        meta["responsable_ia"] = resp
+        payload["metadata_json"] = meta
+
+    return payload
+
+
+# Historial2 workitems.
+try:
+    _iad_respsave_orig_h2wi_save_v2 = _iad_h2wi_save_payload
+
+    def _iad_h2wi_save_payload(db, request, payload):
+        payload = _iad_respsave_from_payload_v2(payload)
+        return _iad_respsave_orig_h2wi_save_v2(db, request, payload)
+
+except Exception:
+    pass
+
+
+# Validación / Training V5.
+try:
+    _iad_respsave_orig_v5_insert_v2 = _iad_v5_insert_history_training
+
+    def _iad_v5_insert_history_training(db, request, payload):
+        payload = _iad_respsave_from_payload_v2(payload)
+        return _iad_respsave_orig_v5_insert_v2(db, request, payload)
+
+except Exception:
+    pass
+
+
+# Validación / Training V4.
+try:
+    _iad_respsave_orig_v4_insert_v2 = _iad_v4_insert_validation_and_training
+
+    def _iad_v4_insert_validation_and_training(db, request, payload):
+        payload = _iad_respsave_from_payload_v2(payload)
+        return _iad_respsave_orig_v4_insert_v2(db, request, payload)
+
+except Exception:
+    pass
+
