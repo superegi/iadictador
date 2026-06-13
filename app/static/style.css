@@ -539,3 +539,484 @@ pre {
     grid-template-columns: 1fr;
   }
 }
+
+/* IAD_FLUJO_2RIA_CSS_V1 */
+.iad-2ria-panel {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.iad-2ria-panel h2 {
+  margin-top: 0.4rem;
+}
+
+.iad-2ria-status {
+  margin: 0.75rem 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.26);
+  color: inherit;
+}
+
+.iad-2ria-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin: 1rem 0;
+}
+
+.iad-2ria-box {
+  padding: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.20);
+}
+
+.iad-2ria-box h3 {
+  margin-top: 0;
+  margin-bottom: 0.65rem;
+}
+
+.iad-2ria-box label {
+  display: block;
+  margin-top: 0.55rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.iad-2ria-box input,
+.iad-2ria-box textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.iad-2ria-wide {
+  grid-column: 1 / -1;
+}
+
+#iad-2ria-extraer-btn {
+  margin-left: 0.65rem;
+}
+
+@media (max-width: 800px) {
+  .iad-2ria-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #iad-2ria-extraer-btn {
+    display: block;
+    margin-left: 0;
+    margin-top: 0.65rem;
+  }
+}
+
+/* IAD_RADIOLOGY_FLOW_CSS_V1 */
+.iad-rad-panel {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.iad-rad-panel h2 {
+  margin-top: 0.4rem;
+}
+
+.iad-rad-status {
+  margin: 0.75rem 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.26);
+  color: inherit;
+}
+
+.iad-rad-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin: 1rem 0;
+}
+
+.iad-rad-box {
+  padding: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.20);
+}
+
+.iad-rad-box h3 {
+  margin-top: 0;
+  margin-bottom: 0.65rem;
+}
+
+.iad-rad-box label {
+  display: block;
+  margin-top: 0.55rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.iad-rad-box input,
+.iad-rad-box textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.iad-rad-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 800px) {
+  .iad-rad-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* IAD_HIDE_OLD_EXTRACTION_CSS_V1 */
+#iad-extraction-card,
+#iad-2ria-panel {
+  display: none !important;
+}
+
+/* IAD_RAD_SIMPLE_UI_CSS_V1 */
+#iad-extraction-card,
+#iad-2ria-panel {
+  display: none !important;
+}
+
+.iad-rad-panel {
+  display: none !important;
+}
+
+.iad-rad-simple-panel {
+  margin-top: 1.25rem;
+}
+
+.iad-rad-simple-card {
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.18);
+  margin-bottom: 1rem;
+}
+
+.iad-rad-simple-card h2 {
+  margin-top: 0;
+}
+
+.iad-rad-simple-status {
+  margin: 0.75rem 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.26);
+}
+
+.iad-rad-simple-card label {
+  display: block;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.iad-rad-simple-card input,
+.iad-rad-simple-card textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.iad-rad-simple-actions {
+  margin-top: 1rem;
+}
+
+#iad-rad-simple-final-report {
+  min-height: 360px;
+}
+
+/* IAD_TRAINING_REVIEW_CSS_V1 */
+#iad-rad-simple-primary-report {
+  opacity: 0.82;
+}
+
+#iad-rad-simple-final-report {
+  min-height: 420px;
+}
+
+#iad-rad-simple-save {
+  margin-right: 0.5rem;
+}
+
+/* IAD_ADMIN_TRAINING_CSS_V1 */
+.iad-admin-training-link {
+  font-weight: 700;
+}
+
+.iad-admin-training-floating-link {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 9999;
+}
+
+.iad-admin-training-floating-link a {
+  display: inline-block;
+  padding: 0.65rem 0.9rem;
+  border-radius: 999px;
+  background: #f2c200;
+  color: #111827;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+
+.iad-training-page {
+  padding: 1rem;
+}
+
+.iad-training-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.iad-training-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.iad-training-summary {
+  display: flex;
+  gap: 1rem;
+  margin: 0.75rem 0 1rem;
+  opacity: 0.9;
+}
+
+.iad-training-row {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: rgba(15, 23, 42, 0.16);
+}
+
+.iad-training-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.iad-training-check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 800;
+}
+
+.iad-training-check input {
+  transform: scale(1.2);
+}
+
+.iad-training-meta {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  opacity: 0.9;
+}
+
+.iad-training-two {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.iad-training-row pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0.85rem;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.45);
+  max-height: 420px;
+  overflow: auto;
+}
+
+.iad-training-details,
+.iad-training-diff {
+  margin-top: 0.75rem;
+}
+
+.iad-training-details summary,
+.iad-training-diff summary {
+  cursor: pointer;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+
+.iad-diff-box {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.iad-diff-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0.22rem 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.iad-diff-prefix {
+  display: inline-block;
+  width: 1.2rem;
+  font-weight: 900;
+}
+
+.iad-diff-eq {
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.iad-diff-del {
+  background: rgba(127, 29, 29, 0.32);
+}
+
+.iad-diff-ins {
+  background: rgba(20, 83, 45, 0.32);
+}
+
+@media (max-width: 900px) {
+  .iad-training-head {
+    display: block;
+  }
+
+  .iad-training-actions {
+    margin-top: 0.75rem;
+  }
+
+  .iad-training-two {
+    grid-template-columns: 1fr;
+  }
+
+  .iad-training-row-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* IAD_RAD_ONE_STEP_CSS_V1 */
+button,
+input[type="button"],
+input[type="submit"] {
+  scroll-margin-top: 90px;
+}
+
+#iad-extraction-card,
+#iad-2ria-panel,
+.iad-rad-panel,
+#iad-rad-simple-panel {
+  display: none !important;
+}
+
+#iad-rad-one-input-actions {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.75rem;
+}
+
+#iad-rad-one-analyze {
+  min-width: 190px;
+}
+
+.iad-rad-one-step-panel {
+  margin-top: 1.25rem;
+}
+
+.iad-rad-one-card {
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.iad-rad-one-status {
+  margin-bottom: 0.9rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.28);
+  color: inherit;
+}
+
+.iad-rad-one-template-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(2, 6, 23, 0.20);
+}
+
+.iad-rad-one-label {
+  display: block;
+  font-size: 0.85rem;
+  opacity: 0.72;
+  margin-bottom: 0.15rem;
+}
+
+.iad-rad-one-editors {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.9rem;
+}
+
+.iad-rad-one-editors label {
+  display: block;
+  font-weight: 800;
+  margin: 0.35rem 0;
+}
+
+#iad-rad-one-primary-report,
+#iad-rad-one-revised-report {
+  width: 100%;
+  min-height: 520px;
+  box-sizing: border-box;
+}
+
+#iad-rad-one-primary-report {
+  opacity: 0.82;
+}
+
+.iad-rad-one-actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1000px) {
+  .iad-rad-one-template-box,
+  .iad-rad-one-editors {
+    grid-template-columns: 1fr;
+  }
+
+  #iad-rad-one-primary-report,
+  #iad-rad-one-revised-report {
+    min-height: 360px;
+  }
+}

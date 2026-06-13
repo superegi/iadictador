@@ -1,4 +1,3 @@
-from app.services.ai.tasks.info_extractor import extract_information_from_text
 from app.services.ai.tasks.audio_transcriber import transcribe_audio_upload, AudioTranscriptionError
 from fastapi.responses import JSONResponse
 from fastapi import UploadFile, File
@@ -597,7 +596,7 @@ async def create_ot(
         hospital_service=clean_form_text(hospital_service) or None,
         report_type=clean_form_text(report_type) or None,
         modality=clean_form_text(modality) or None,
-        report_title=clean_form_text(report_title) or None,
+        report_title=clean_form_text(report_title_value) or None,
         billing_visible=user.billing_visible,
         billing_enabled=user.billing_enabled,
         charge_yes_no=bool(user.billing_enabled),
@@ -1485,7 +1484,7 @@ def template_new_post(
         radiology_use=clean_form_text(radiology_use),
         body_region=clean_form_text(body_region) or None,
         template_name=clean_form_text(template_name),
-        title=clean_form_text(report_title) or None,
+        title=clean_form_text(report_title_value) or None,
         technique=clean_form_text(technique) or None,
         background=clean_form_text(background) or None,
         findings=clean_form_text(findings) or None,
@@ -2255,7 +2254,23 @@ def template_edit_post(
     specific_rules_json: str = Form(""),
     is_shared: Optional[str] = Form(None),
     db: Session = Depends(get_db),
+    report_title: str = Form(""),
 ):
+
+    # IAD_FIX_REPORT_TITLE_TEMPLATE_EDIT_POST_V1
+    # Compatibilidad: versiones previas usaban report_title en el cuerpo
+    # pero no siempre lo declaraban como campo Form.
+    try:
+        report_title_value = report_title
+    except NameError:
+        report_title_value = (
+            locals().get("title")
+            or locals().get("titulo")
+            or locals().get("nombre")
+            or locals().get("template_title")
+            or locals().get("report_name")
+            or ""
+        )
     try:
         user = require_user(request, db)
     except PermissionError:
@@ -2279,7 +2294,7 @@ def template_edit_post(
     t.radiology_use = radiology_use.strip()
     t.body_region = body_region.strip() or None
     t.template_name = template_name.strip()
-    t.title = clean_form_text(report_title) or None
+    t.title = clean_form_text(report_title_value) or None
     t.technique = clean_form_text(technique) or None
     t.background = clean_form_text(background) or None
     t.findings = clean_form_text(findings) or None
@@ -2433,3 +2448,1900 @@ def admin_user_detail_post(
     return redirect(f"/iad/admin/usuarios/{target.id}")
 
 # IAD_PROFILE_TEMPLATE_USER_ROUTES_END
+
+
+
+# IAD_FLUJO_2RIA_ENDPOINT_V1
+try:
+    from fastapi import Form as _IAD2_Form
+    from fastapi import Request as _IAD2_Request
+    from fastapi.responses import JSONResponse as _IAD2_JSONResponse
+except Exception:
+    _IAD2_Form = None
+    _IAD2_Request = None
+    _IAD2_JSONResponse = None
+
+
+@router.post("/iad/extraer-informacion-2ria.json")
+async def iad_extraer_informacion_2ria_json(
+    request: _IAD2_Request,
+    texto_bruto: str = _IAD2_Form(""),
+):
+    """
+    Extrae plantilla sugerida, información secundaria y hallazgos.
+    No genera informe final.
+    """
+    from app.services.ai.tasks.info_extractor import (
+        collect_template_candidates,
+        extract_information_from_text,
+    )
+
+    templates = collect_template_candidates()
+    extraction = extract_information_from_text(texto_bruto or "", templates)
+
+    return _IAD2_JSONResponse(
+        {
+            "ok": True,
+            "extraction": extraction,
+        }
+    )
+
+
+
+# IAD_FLUJO_2RIA_ENDPOINT_V2
+from fastapi import Depends as _IAD_V2_Depends
+from fastapi import Form as _IAD_V2_Form
+from fastapi import Request as _IAD_V2_Request
+from fastapi.responses import JSONResponse as _IAD_V2_JSONResponse
+
+try:
+    from app.iadictador.db import get_db as _IAD_V2_get_db
+except Exception:
+    _IAD_V2_get_db = globals().get("get_db")
+
+
+@router.post("/iad/extraer-informacion-2ria-v2.json")
+async def iad_extraer_informacion_2ria_v2_json(
+    request: _IAD_V2_Request,
+    texto_bruto: str = _IAD_V2_Form(""),
+    db = _IAD_V2_Depends(_IAD_V2_get_db),
+):
+    from app.services.ai.tasks.info_extractor_v2 import extract_information_from_text_v2
+
+    extraction = extract_information_from_text_v2(texto_bruto or "", db=db)
+
+    return _IAD_V2_JSONResponse(
+        {
+            "ok": True,
+            "extraction": extraction,
+        }
+    )
+
+
+
+# IAD_RADIOLOGY_FLOW_ENDPOINTS_V1
+from fastapi import Depends as _IAD_RAD_Depends
+from fastapi import Form as _IAD_RAD_Form
+from fastapi import Request as _IAD_RAD_Request
+from fastapi.responses import JSONResponse as _IAD_RAD_JSONResponse
+
+try:
+    from app.iadictador.db import get_db as _IAD_RAD_get_db
+except Exception:
+    _IAD_RAD_get_db = globals().get("get_db")
+
+
+@router.post("/iad/analizar-radiologia.json")
+async def iad_analizar_radiologia_json(
+    request: _IAD_RAD_Request,
+    texto_bruto: str = _IAD_RAD_Form(""),
+    db = _IAD_RAD_Depends(_IAD_RAD_get_db),
+):
+    from app.services.ai.tasks.radiology_flow import analyze_radiology
+
+    result = analyze_radiology(texto_bruto or "", db=db)
+    return _IAD_RAD_JSONResponse(result)
+
+
+@router.post("/iad/generar-informe-radiologico.json")
+async def iad_generar_informe_radiologico_json(
+    request: _IAD_RAD_Request,
+    hallazgos: str = _IAD_RAD_Form(""),
+    plantilla_nombre: str = _IAD_RAD_Form(""),
+    plantilla_id: str = _IAD_RAD_Form(""),
+    db = _IAD_RAD_Depends(_IAD_RAD_get_db),
+):
+    from app.services.ai.tasks.radiology_flow import generate_report_from_template
+
+    result = generate_report_from_template(
+        hallazgos=hallazgos or "",
+        template_name=plantilla_nombre or "",
+        template_id=plantilla_id or "",
+        db=db,
+    )
+    return _IAD_RAD_JSONResponse(result)
+
+
+
+# IAD_TRAINING_SAMPLES_ENDPOINTS_V1
+from fastapi import Depends as _IAD_TS_Depends
+from fastapi import Form as _IAD_TS_Form
+from fastapi import Request as _IAD_TS_Request
+from fastapi.responses import JSONResponse as _IAD_TS_JSONResponse
+
+try:
+    from app.iadictador.db import get_db as _IAD_TS_get_db
+except Exception:
+    _IAD_TS_get_db = globals().get("get_db")
+
+
+def _iad_ts_ensure_table(db):
+    from sqlalchemy import text as _sa_text
+
+    db.execute(_sa_text("""
+        CREATE TABLE IF NOT EXISTS iad_training_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ot_id INTEGER,
+            texto_dictado TEXT,
+            plantilla_nombre TEXT,
+            plantilla_id TEXT,
+            hallazgos_detectados TEXT,
+            resultado_primario TEXT,
+            resultado_revisado TEXT,
+            modelo TEXT,
+            metadata_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+
+    db.execute(_sa_text("""
+        CREATE INDEX IF NOT EXISTS idx_iad_training_samples_ot_id
+        ON iad_training_samples(ot_id)
+    """))
+
+    db.commit()
+
+
+@router.post("/iad/guardar-revision-modelo.json")
+async def iad_guardar_revision_modelo_json(
+    request: _IAD_TS_Request,
+    ot_id: str = _IAD_TS_Form(""),
+    texto_dictado: str = _IAD_TS_Form(""),
+    plantilla_nombre: str = _IAD_TS_Form(""),
+    plantilla_id: str = _IAD_TS_Form(""),
+    hallazgos_detectados: str = _IAD_TS_Form(""),
+    resultado_primario: str = _IAD_TS_Form(""),
+    resultado_revisado: str = _IAD_TS_Form(""),
+    modelo: str = _IAD_TS_Form(""),
+    metadata_json: str = _IAD_TS_Form("{}"),
+    db = _IAD_TS_Depends(_IAD_TS_get_db),
+):
+    from sqlalchemy import text as _sa_text
+    import json as _json
+
+    _iad_ts_ensure_table(db)
+
+    try:
+        ot_id_int = int(ot_id) if str(ot_id).strip() else None
+    except Exception:
+        ot_id_int = None
+
+    try:
+        parsed_meta = _json.loads(metadata_json or "{}")
+        metadata_clean = _json.dumps(parsed_meta, ensure_ascii=False, indent=2)
+    except Exception:
+        metadata_clean = "{}"
+
+    # Si hay OT, actualiza último registro de esa OT; si no, crea registro nuevo.
+    existing_id = None
+    if ot_id_int is not None:
+        row = db.execute(
+            _sa_text("""
+                SELECT id
+                FROM iad_training_samples
+                WHERE ot_id = :ot_id
+                ORDER BY id DESC
+                LIMIT 1
+            """),
+            {"ot_id": ot_id_int},
+        ).fetchone()
+        if row:
+            existing_id = row[0]
+
+    if existing_id:
+        db.execute(
+            _sa_text("""
+                UPDATE iad_training_samples
+                SET
+                    texto_dictado = :texto_dictado,
+                    plantilla_nombre = :plantilla_nombre,
+                    plantilla_id = :plantilla_id,
+                    hallazgos_detectados = :hallazgos_detectados,
+                    resultado_primario = :resultado_primario,
+                    resultado_revisado = :resultado_revisado,
+                    modelo = :modelo,
+                    metadata_json = :metadata_json,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+            """),
+            {
+                "id": existing_id,
+                "texto_dictado": texto_dictado,
+                "plantilla_nombre": plantilla_nombre,
+                "plantilla_id": plantilla_id,
+                "hallazgos_detectados": hallazgos_detectados,
+                "resultado_primario": resultado_primario,
+                "resultado_revisado": resultado_revisado,
+                "modelo": modelo,
+                "metadata_json": metadata_clean,
+            },
+        )
+        sample_id = existing_id
+    else:
+        result = db.execute(
+            _sa_text("""
+                INSERT INTO iad_training_samples (
+                    ot_id,
+                    texto_dictado,
+                    plantilla_nombre,
+                    plantilla_id,
+                    hallazgos_detectados,
+                    resultado_primario,
+                    resultado_revisado,
+                    modelo,
+                    metadata_json,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :ot_id,
+                    :texto_dictado,
+                    :plantilla_nombre,
+                    :plantilla_id,
+                    :hallazgos_detectados,
+                    :resultado_primario,
+                    :resultado_revisado,
+                    :modelo,
+                    :metadata_json,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+            """),
+            {
+                "ot_id": ot_id_int,
+                "texto_dictado": texto_dictado,
+                "plantilla_nombre": plantilla_nombre,
+                "plantilla_id": plantilla_id,
+                "hallazgos_detectados": hallazgos_detectados,
+                "resultado_primario": resultado_primario,
+                "resultado_revisado": resultado_revisado,
+                "modelo": modelo,
+                "metadata_json": metadata_clean,
+            },
+        )
+        sample_id = result.lastrowid
+
+    db.commit()
+
+    return _IAD_TS_JSONResponse({
+        "ok": True,
+        "sample_id": sample_id,
+        "ot_id": ot_id_int,
+    })
+
+
+@router.get("/iad/exportar-revisiones-modelo.json")
+async def iad_exportar_revisiones_modelo_json(
+    request: _IAD_TS_Request,
+    db = _IAD_TS_Depends(_IAD_TS_get_db),
+):
+    from sqlalchemy import text as _sa_text
+    import json as _json
+
+    _iad_ts_ensure_table(db)
+
+    rows = db.execute(_sa_text("""
+        SELECT
+            id,
+            ot_id,
+            texto_dictado,
+            plantilla_nombre,
+            plantilla_id,
+            hallazgos_detectados,
+            resultado_primario,
+            resultado_revisado,
+            modelo,
+            metadata_json,
+            created_at,
+            updated_at
+        FROM iad_training_samples
+        ORDER BY id ASC
+    """)).fetchall()
+
+    items = []
+    for r in rows:
+        try:
+            meta = _json.loads(r[9] or "{}")
+        except Exception:
+            meta = {}
+
+        items.append({
+            "id": r[0],
+            "ot_id": r[1],
+            "texto_dictado": r[2] or "",
+            "plantilla_nombre": r[3] or "",
+            "plantilla_id": r[4] or "",
+            "hallazgos_detectados": r[5] or "",
+            "resultado_primario": r[6] or "",
+            "resultado_revisado": r[7] or "",
+            "modelo": r[8] or "",
+            "metadata": meta,
+            "created_at": r[10],
+            "updated_at": r[11],
+        })
+
+    return _IAD_TS_JSONResponse({
+        "ok": True,
+        "count": len(items),
+        "items": items,
+    })
+
+
+
+# IAD_ADMIN_TRAINING_PAGE_ENDPOINTS_V1
+from fastapi import Depends as _IAD_AT_Depends
+from fastapi import Form as _IAD_AT_Form
+from fastapi import Request as _IAD_AT_Request
+from fastapi.responses import JSONResponse as _IAD_AT_JSONResponse
+from fastapi.responses import RedirectResponse as _IAD_AT_RedirectResponse
+from fastapi.responses import Response as _IAD_AT_Response
+
+try:
+    from app.iadictador.db import get_db as _IAD_AT_get_db
+except Exception:
+    _IAD_AT_get_db = globals().get("get_db")
+
+
+def _iad_at_templates():
+    obj = globals().get("templates")
+    if obj is not None:
+        return obj
+
+    from fastapi.templating import Jinja2Templates
+    return Jinja2Templates(directory="app/templates")
+
+
+def _iad_at_ensure_table(db):
+    from sqlalchemy import text as _sa_text
+
+    db.execute(_sa_text("""
+        CREATE TABLE IF NOT EXISTS iad_training_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ot_id INTEGER,
+            texto_dictado TEXT,
+            plantilla_nombre TEXT,
+            plantilla_id TEXT,
+            hallazgos_detectados TEXT,
+            resultado_primario TEXT,
+            resultado_revisado TEXT,
+            modelo TEXT,
+            metadata_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+
+    db.execute(_sa_text("""
+        CREATE INDEX IF NOT EXISTS idx_iad_training_samples_ot_id
+        ON iad_training_samples(ot_id)
+    """))
+
+    db.commit()
+
+
+def _iad_at_session_user(request):
+    try:
+        return request.session or {}
+    except Exception:
+        return {}
+
+
+def _iad_at_is_logged(request):
+    session = _iad_at_session_user(request)
+    if not session:
+        return False
+
+    keys = [
+        "user_id",
+        "iad_user_id",
+        "uid",
+        "username",
+        "user",
+        "email",
+        "role",
+        "is_admin",
+    ]
+
+    return any(k in session and session.get(k) for k in keys)
+
+
+def _iad_at_is_admin(request, db=None):
+    session = _iad_at_session_user(request)
+
+    # Admin explícito en sesión.
+    for key in ("is_admin", "admin"):
+        val = session.get(key)
+        if val is True or str(val).lower() in {"1", "true", "yes", "admin"}:
+            return True
+
+    role = str(session.get("role") or session.get("rol") or "").lower()
+    if role in {"admin", "administrator", "superadmin"}:
+        return True
+
+    username = str(session.get("username") or session.get("user") or "").lower()
+    if username in {"admin", "egidio"}:
+        return True
+
+    # Intento DB tolerante si hay user_id.
+    user_id = session.get("user_id") or session.get("iad_user_id") or session.get("uid")
+    if db is not None and user_id:
+        try:
+            from sqlalchemy import text as _sa_text
+
+            tables = db.execute(
+                _sa_text("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            ).fetchall()
+
+            for row in tables:
+                table = row[0]
+                if not any(x in table.lower() for x in ("user", "usuario")):
+                    continue
+
+                cols = db.execute(_sa_text(f'PRAGMA table_info("{table}")')).fetchall()
+                colnames = [c[1] for c in cols]
+
+                if "id" not in colnames:
+                    continue
+
+                possible_cols = [
+                    c for c in colnames
+                    if c.lower() in {"role", "rol", "is_admin", "admin", "username", "user", "nombre"}
+                ]
+
+                if not possible_cols:
+                    continue
+
+                select_cols = ", ".join(f'"{c}"' for c in possible_cols)
+                found = db.execute(
+                    _sa_text(f'SELECT {select_cols} FROM "{table}" WHERE id = :id LIMIT 1'),
+                    {"id": user_id},
+                ).fetchone()
+
+                if not found:
+                    continue
+
+                values = [str(v).lower() for v in found if v is not None]
+                if any(v in {"admin", "administrator", "superadmin", "1", "true"} for v in values):
+                    return True
+        except Exception:
+            pass
+
+    return False
+
+
+def _iad_at_require_admin(request, db=None):
+    # Si hay login pero no logramos detectar admin, por seguridad no mostramos página.
+    if not _iad_at_is_logged(request):
+        return _IAD_AT_RedirectResponse("/iad/login", status_code=303)
+
+    if not _iad_at_is_admin(request, db=db):
+        return _IAD_AT_Response("Forbidden: admin required", status_code=403)
+
+    return None
+
+
+def _iad_at_diff_html(a, b):
+    import difflib
+    import html
+
+    a_lines = str(a or "").splitlines()
+    b_lines = str(b or "").splitlines()
+
+    sm = difflib.SequenceMatcher(None, a_lines, b_lines)
+    parts = []
+
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            for line in a_lines[i1:i2]:
+                parts.append(f'<div class="iad-diff-line iad-diff-eq"><span class="iad-diff-prefix"> </span>{html.escape(line)}</div>')
+        elif tag == "delete":
+            for line in a_lines[i1:i2]:
+                parts.append(f'<div class="iad-diff-line iad-diff-del"><span class="iad-diff-prefix">−</span>{html.escape(line)}</div>')
+        elif tag == "insert":
+            for line in b_lines[j1:j2]:
+                parts.append(f'<div class="iad-diff-line iad-diff-ins"><span class="iad-diff-prefix">+</span>{html.escape(line)}</div>')
+        elif tag == "replace":
+            for line in a_lines[i1:i2]:
+                parts.append(f'<div class="iad-diff-line iad-diff-del"><span class="iad-diff-prefix">−</span>{html.escape(line)}</div>')
+            for line in b_lines[j1:j2]:
+                parts.append(f'<div class="iad-diff-line iad-diff-ins"><span class="iad-diff-prefix">+</span>{html.escape(line)}</div>')
+
+    return "\n".join(parts)
+
+
+def _iad_at_rows(db, ids=None):
+    from sqlalchemy import text as _sa_text
+    import json as _json
+
+    _iad_at_ensure_table(db)
+
+    where = ""
+    params = {}
+
+    if ids:
+        clean_ids = []
+        for x in ids:
+            try:
+                clean_ids.append(int(x))
+            except Exception:
+                pass
+
+        if clean_ids:
+            placeholders = []
+            for i, value in enumerate(clean_ids):
+                key = f"id_{i}"
+                placeholders.append(f":{key}")
+                params[key] = value
+            where = "WHERE id IN (" + ",".join(placeholders) + ")"
+
+    rows = db.execute(
+        _sa_text(f"""
+            SELECT
+                id,
+                ot_id,
+                texto_dictado,
+                plantilla_nombre,
+                plantilla_id,
+                hallazgos_detectados,
+                resultado_primario,
+                resultado_revisado,
+                modelo,
+                metadata_json,
+                created_at,
+                updated_at
+            FROM iad_training_samples
+            {where}
+            ORDER BY id DESC
+        """),
+        params,
+    ).fetchall()
+
+    items = []
+    for r in rows:
+        try:
+            meta = _json.loads(r[9] or "{}")
+        except Exception:
+            meta = {}
+
+        item = {
+            "id": r[0],
+            "ot_id": r[1],
+            "texto_dictado": r[2] or "",
+            "plantilla_nombre": r[3] or "",
+            "plantilla_id": r[4] or "",
+            "hallazgos_detectados": r[5] or "",
+            "resultado_primario": r[6] or "",
+            "resultado_revisado": r[7] or "",
+            "modelo": r[8] or "",
+            "metadata": meta,
+            "created_at": r[10],
+            "updated_at": r[11],
+        }
+        item["diff_html"] = _iad_at_diff_html(item["resultado_primario"], item["resultado_revisado"])
+        items.append(item)
+
+    return items
+
+
+@router.get("/iad/admin/training")
+async def iad_admin_training_page(
+    request: _IAD_AT_Request,
+    db = _IAD_AT_Depends(_IAD_AT_get_db),
+):
+    denied = _iad_at_require_admin(request, db=db)
+    if denied:
+        return denied
+
+    items = _iad_at_rows(db)
+
+    return _iad_at_templates().TemplateResponse(
+        "iadictador/admin_training.html",
+        {
+            "request": request,
+            "items": items,
+            "count": len(items),
+        },
+    )
+
+
+@router.get("/iad/admin/training/export.json")
+async def iad_admin_training_export_all(
+    request: _IAD_AT_Request,
+    db = _IAD_AT_Depends(_IAD_AT_get_db),
+):
+    denied = _iad_at_require_admin(request, db=db)
+    if denied:
+        return denied
+
+    items = _iad_at_rows(db)
+
+    # No mandar diff_html en export principal.
+    for item in items:
+        item.pop("diff_html", None)
+
+    return _IAD_AT_JSONResponse({
+        "ok": True,
+        "count": len(items),
+        "items": items,
+    })
+
+
+@router.post("/iad/admin/training/export-selected.json")
+async def iad_admin_training_export_selected(
+    request: _IAD_AT_Request,
+    ids: list[str] = _IAD_AT_Form([]),
+    db = _IAD_AT_Depends(_IAD_AT_get_db),
+):
+    denied = _iad_at_require_admin(request, db=db)
+    if denied:
+        return denied
+
+    items = _iad_at_rows(db, ids=ids)
+
+    for item in items:
+        item.pop("diff_html", None)
+
+    return _IAD_AT_JSONResponse({
+        "ok": True,
+        "count": len(items),
+        "selected_ids": ids,
+        "items": items,
+    })
+
+
+@router.get("/iad/admin/training/{sample_id}.json")
+async def iad_admin_training_one_json(
+    request: _IAD_AT_Request,
+    sample_id: int,
+    db = _IAD_AT_Depends(_IAD_AT_get_db),
+):
+    denied = _iad_at_require_admin(request, db=db)
+    if denied:
+        return denied
+
+    items = _iad_at_rows(db, ids=[sample_id])
+
+    if not items:
+        return _IAD_AT_JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+
+    item = items[0]
+    item.pop("diff_html", None)
+
+    return _IAD_AT_JSONResponse({
+        "ok": True,
+        "item": item,
+    })
+
+
+
+# IAD_TRAINING_DELETE_AND_HISTORY_SYNC_V2
+from fastapi import Depends as _IAD_TDH2_Depends
+from fastapi import Form as _IAD_TDH2_Form
+from fastapi import Request as _IAD_TDH2_Request
+from fastapi.responses import JSONResponse as _IAD_TDH2_JSONResponse
+from fastapi.responses import RedirectResponse as _IAD_TDH2_RedirectResponse
+from fastapi.responses import Response as _IAD_TDH2_Response
+
+try:
+    from app.iadictador.db import get_db as _IAD_TDH2_get_db
+except Exception:
+    _IAD_TDH2_get_db = globals().get("get_db")
+
+
+def _iad_tdh2_ensure_tables(db):
+    from sqlalchemy import text as _sa_text
+
+    db.execute(_sa_text("""
+        CREATE TABLE IF NOT EXISTS iad_training_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ot_id INTEGER,
+            texto_dictado TEXT,
+            plantilla_nombre TEXT,
+            plantilla_id TEXT,
+            hallazgos_detectados TEXT,
+            resultado_primario TEXT,
+            resultado_revisado TEXT,
+            modelo TEXT,
+            metadata_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+
+    db.execute(_sa_text("""
+        CREATE INDEX IF NOT EXISTS idx_iad_training_samples_ot_id
+        ON iad_training_samples(ot_id)
+    """))
+
+    db.execute(_sa_text("""
+        CREATE TABLE IF NOT EXISTS iad_training_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sample_id INTEGER,
+            ot_id INTEGER,
+            accion TEXT,
+            detalle TEXT,
+            resultado_revisado TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+
+    db.commit()
+
+
+def _iad_tdh2_session(request):
+    try:
+        return request.session or {}
+    except Exception:
+        return {}
+
+
+def _iad_tdh2_logged(request):
+    sess = _iad_tdh2_session(request)
+    return any(sess.get(k) for k in ["user_id", "iad_user_id", "uid", "username", "user", "email", "role", "is_admin"])
+
+
+def _iad_tdh2_admin(request):
+    sess = _iad_tdh2_session(request)
+
+    for key in ("is_admin", "admin"):
+        value = sess.get(key)
+        if value is True or str(value).lower() in {"1", "true", "yes", "admin"}:
+            return True
+
+    role = str(sess.get("role") or sess.get("rol") or "").lower()
+    if role in {"admin", "administrator", "superadmin"}:
+        return True
+
+    username = str(sess.get("username") or sess.get("user") or "").lower()
+    if username in {"admin", "egidio"}:
+        return True
+
+    return False
+
+
+def _iad_tdh2_require_admin(request):
+    if not _iad_tdh2_logged(request):
+        return _IAD_TDH2_RedirectResponse("/iad/login", status_code=303)
+
+    if not _iad_tdh2_admin(request):
+        return _IAD_TDH2_Response("Forbidden: admin required", status_code=403)
+
+    return None
+
+
+def _iad_tdh2_int_or_none(value):
+    try:
+        if str(value).strip() == "":
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _iad_tdh2_clean_json(raw):
+    import json as _json
+
+    try:
+        parsed = _json.loads(raw or "{}")
+        return _json.dumps(parsed, ensure_ascii=False, indent=2)
+    except Exception:
+        return "{}"
+
+
+def _iad_tdh2_columns(db, table_name):
+    from sqlalchemy import text as _sa_text
+
+    try:
+        rows = db.execute(_sa_text('PRAGMA table_info("' + table_name + '")')).fetchall()
+        return [r[1] for r in rows]
+    except Exception:
+        return []
+
+
+def _iad_tdh2_insert_or_update_sample(
+    db,
+    ot_id,
+    texto_dictado,
+    plantilla_nombre,
+    plantilla_id,
+    hallazgos_detectados,
+    resultado_primario,
+    resultado_revisado,
+    modelo,
+    metadata_json,
+):
+    from sqlalchemy import text as _sa_text
+
+    _iad_tdh2_ensure_tables(db)
+
+    existing_id = None
+
+    if ot_id is not None:
+        row = db.execute(
+            _sa_text("""
+                SELECT id
+                FROM iad_training_samples
+                WHERE ot_id = :ot_id
+                ORDER BY id DESC
+                LIMIT 1
+            """),
+            {"ot_id": ot_id},
+        ).fetchone()
+
+        if row:
+            existing_id = row[0]
+
+    params = {
+        "ot_id": ot_id,
+        "texto_dictado": texto_dictado or "",
+        "plantilla_nombre": plantilla_nombre or "",
+        "plantilla_id": plantilla_id or "",
+        "hallazgos_detectados": hallazgos_detectados or "",
+        "resultado_primario": resultado_primario or "",
+        "resultado_revisado": resultado_revisado or "",
+        "modelo": modelo or "",
+        "metadata_json": _iad_tdh2_clean_json(metadata_json),
+    }
+
+    if existing_id:
+        params["id"] = existing_id
+
+        db.execute(
+            _sa_text("""
+                UPDATE iad_training_samples
+                SET
+                    texto_dictado = :texto_dictado,
+                    plantilla_nombre = :plantilla_nombre,
+                    plantilla_id = :plantilla_id,
+                    hallazgos_detectados = :hallazgos_detectados,
+                    resultado_primario = :resultado_primario,
+                    resultado_revisado = :resultado_revisado,
+                    modelo = :modelo,
+                    metadata_json = :metadata_json,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+            """),
+            params,
+        )
+
+        db.commit()
+        return existing_id
+
+    result = db.execute(
+        _sa_text("""
+            INSERT INTO iad_training_samples (
+                ot_id,
+                texto_dictado,
+                plantilla_nombre,
+                plantilla_id,
+                hallazgos_detectados,
+                resultado_primario,
+                resultado_revisado,
+                modelo,
+                metadata_json,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                :ot_id,
+                :texto_dictado,
+                :plantilla_nombre,
+                :plantilla_id,
+                :hallazgos_detectados,
+                :resultado_primario,
+                :resultado_revisado,
+                :modelo,
+                :metadata_json,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            )
+        """),
+        params,
+    )
+
+    sample_id = getattr(result, "lastrowid", None)
+
+    if not sample_id:
+        row = db.execute(_sa_text("SELECT last_insert_rowid()")).fetchone()
+        sample_id = row[0] if row else None
+
+    db.commit()
+    return sample_id
+
+
+def _iad_tdh2_sync_history(db, sample_id, ot_id, texto_dictado, plantilla_nombre, hallazgos_detectados, resultado_revisado):
+    from sqlalchemy import text as _sa_text
+
+    _iad_tdh2_ensure_tables(db)
+
+    detail = {
+        "ok": False,
+        "sample_id": sample_id,
+        "ot_id": ot_id,
+        "updated_table": "",
+        "updated_columns": [],
+        "reason": "",
+    }
+
+    db.execute(
+        _sa_text("""
+            INSERT INTO iad_training_history (
+                sample_id,
+                ot_id,
+                accion,
+                detalle,
+                resultado_revisado,
+                created_at
+            )
+            VALUES (
+                :sample_id,
+                :ot_id,
+                'guardar_revision',
+                :detalle,
+                :resultado_revisado,
+                CURRENT_TIMESTAMP
+            )
+        """),
+        {
+            "sample_id": sample_id,
+            "ot_id": ot_id,
+            "detalle": "plantilla=" + (plantilla_nombre or "") + "; hallazgos_len=" + str(len(hallazgos_detectados or "")),
+            "resultado_revisado": resultado_revisado or "",
+        },
+    )
+
+    if ot_id is None:
+        detail["reason"] = "sin_ot_id"
+        db.commit()
+        return detail
+
+    # Sincronización best-effort con una tabla principal si existe.
+    tables = db.execute(
+        _sa_text("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    ).fetchall()
+
+    candidate_tables = []
+
+    for row in tables:
+        table = row[0]
+        tl = table.lower()
+
+        if table in {"iad_training_samples", "iad_training_history"}:
+            continue
+
+        if not any(k in tl for k in ["ot", "orden", "trabajo", "historial", "history", "job"]):
+            continue
+
+        cols = _iad_tdh2_columns(db, table)
+
+        if "id" not in cols:
+            continue
+
+        try:
+            exists = db.execute(
+                _sa_text('SELECT id FROM "' + table + '" WHERE id = :id LIMIT 1'),
+                {"id": ot_id},
+            ).fetchone()
+        except Exception:
+            exists = None
+
+        if exists:
+            candidate_tables.append((table, cols))
+
+    if not candidate_tables:
+        detail["reason"] = "no_encontre_tabla_ot_con_ese_id"
+        db.commit()
+        return detail
+
+    def table_score(item):
+        table, cols = item
+        tl = table.lower()
+        score = 0
+        if "ot" in tl:
+            score += 50
+        if "orden" in tl:
+            score += 40
+        if "trabajo" in tl:
+            score += 40
+        if "historial" in tl or "history" in tl:
+            score -= 10
+        return score
+
+    candidate_tables.sort(key=table_score, reverse=True)
+    target_table, cols = candidate_tables[0]
+
+    params = {"id": ot_id}
+    assignments = []
+
+    def add_col(possible_names, value, param_name):
+        for col in possible_names:
+            if col in cols:
+                assignments.append('"' + col + '" = :' + param_name)
+                params[param_name] = value or ""
+                detail["updated_columns"].append(col)
+                return True
+        return False
+
+    add_col(
+        ["resultado_revisado", "resultado_final", "informe_final", "texto_final", "final_text", "resultado", "informe", "output", "salida", "texto_resultado", "contenido_final"],
+        resultado_revisado,
+        "resultado_revisado",
+    )
+
+    add_col(
+        ["texto_dictado", "transcripcion", "texto_transcrito", "input_text", "entrada", "texto_entrada"],
+        texto_dictado,
+        "texto_dictado",
+    )
+
+    add_col(
+        ["plantilla_nombre", "plantilla", "template_name", "template"],
+        plantilla_nombre,
+        "plantilla_nombre",
+    )
+
+    add_col(
+        ["hallazgos_detectados", "hallazgos", "findings"],
+        hallazgos_detectados,
+        "hallazgos_detectados",
+    )
+
+    for col in ["updated_at", "actualizado_en", "modified_at"]:
+        if col in cols:
+            assignments.append('"' + col + '" = CURRENT_TIMESTAMP')
+            detail["updated_columns"].append(col)
+            break
+
+    if not assignments:
+        detail["reason"] = "tabla_" + target_table + "_sin_columnas_actualizables"
+        db.commit()
+        return detail
+
+    sql = 'UPDATE "' + target_table + '" SET ' + ", ".join(assignments) + " WHERE id = :id"
+
+    try:
+        db.execute(_sa_text(sql), params)
+        db.commit()
+        detail["ok"] = True
+        detail["updated_table"] = target_table
+        detail["reason"] = "sincronizado"
+        return detail
+    except Exception as exc:
+        db.rollback()
+        detail["reason"] = "error_update_" + target_table + ": " + str(exc)
+        return detail
+
+
+@router.post("/iad/guardar-revision-y-historial.json")
+async def iad_guardar_revision_y_historial_json(
+    request: _IAD_TDH2_Request,
+    ot_id: str = _IAD_TDH2_Form(""),
+    texto_dictado: str = _IAD_TDH2_Form(""),
+    plantilla_nombre: str = _IAD_TDH2_Form(""),
+    plantilla_id: str = _IAD_TDH2_Form(""),
+    hallazgos_detectados: str = _IAD_TDH2_Form(""),
+    resultado_primario: str = _IAD_TDH2_Form(""),
+    resultado_revisado: str = _IAD_TDH2_Form(""),
+    modelo: str = _IAD_TDH2_Form(""),
+    metadata_json: str = _IAD_TDH2_Form("{}"),
+    db = _IAD_TDH2_Depends(_IAD_TDH2_get_db),
+):
+    ot_id_int = _iad_tdh2_int_or_none(ot_id)
+
+    sample_id = _iad_tdh2_insert_or_update_sample(
+        db,
+        ot_id_int,
+        texto_dictado,
+        plantilla_nombre,
+        plantilla_id,
+        hallazgos_detectados,
+        resultado_primario,
+        resultado_revisado,
+        modelo,
+        metadata_json,
+    )
+
+    history_sync = _iad_tdh2_sync_history(
+        db,
+        sample_id,
+        ot_id_int,
+        texto_dictado,
+        plantilla_nombre,
+        hallazgos_detectados,
+        resultado_revisado,
+    )
+
+    return _IAD_TDH2_JSONResponse({
+        "ok": True,
+        "sample_id": sample_id,
+        "ot_id": ot_id_int,
+        "historial_sync": history_sync,
+    })
+
+
+@router.post("/iad/admin/training/delete_selected")
+async def iad_admin_training_delete_selected_v2(
+    request: _IAD_TDH2_Request,
+    ids: list[str] = _IAD_TDH2_Form([]),
+    db = _IAD_TDH2_Depends(_IAD_TDH2_get_db),
+):
+    from sqlalchemy import text as _sa_text
+
+    denied = _iad_tdh2_require_admin(request)
+    if denied:
+        return denied
+
+    _iad_tdh2_ensure_tables(db)
+
+    clean_ids = []
+
+    for value in ids:
+        parsed = _iad_tdh2_int_or_none(value)
+        if parsed is not None:
+            clean_ids.append(parsed)
+
+    clean_ids = sorted(set(clean_ids))
+
+    if not clean_ids:
+        return _IAD_TDH2_JSONResponse({
+            "ok": False,
+            "error": "sin_ids",
+            "deleted": 0,
+        }, status_code=400)
+
+    placeholders = []
+    params = {}
+
+    for i, sample_id in enumerate(clean_ids):
+        key = "id_" + str(i)
+        placeholders.append(":" + key)
+        params[key] = sample_id
+
+    in_sql = ", ".join(placeholders)
+
+    before = db.execute(
+        _sa_text("SELECT COUNT(*) FROM iad_training_samples WHERE id IN (" + in_sql + ")"),
+        params,
+    ).fetchone()[0]
+
+    db.execute(
+        _sa_text("DELETE FROM iad_training_samples WHERE id IN (" + in_sql + ")"),
+        params,
+    )
+
+    db.execute(
+        _sa_text("DELETE FROM iad_training_history WHERE sample_id IN (" + in_sql + ")"),
+        params,
+    )
+
+    db.commit()
+
+    return _IAD_TDH2_JSONResponse({
+        "ok": True,
+        "deleted": before,
+        "ids": clean_ids,
+    })
+
+
+@router.post("/iad/admin/training/delete_one")
+async def iad_admin_training_delete_one_v2(
+    request: _IAD_TDH2_Request,
+    id: str = _IAD_TDH2_Form(""),
+    db = _IAD_TDH2_Depends(_IAD_TDH2_get_db),
+):
+    return await iad_admin_training_delete_selected_v2(
+        request=request,
+        ids=[id],
+        db=db,
+    )
+
+
+# IAD_SAVE_REVIEW_HISTORY_REAL_V3
+from fastapi import Depends as _IAD_HR3_Depends
+from fastapi import Form as _IAD_HR3_Form
+from fastapi import Request as _IAD_HR3_Request
+from fastapi.responses import JSONResponse as _IAD_HR3_JSONResponse
+from fastapi.responses import RedirectResponse as _IAD_HR3_RedirectResponse
+from fastapi.responses import Response as _IAD_HR3_Response
+
+try:
+    from app.iadictador.db import get_db as _IAD_HR3_get_db
+except Exception:
+    _IAD_HR3_get_db = globals().get("get_db")
+
+
+def _iad_hr3_ensure_training_tables(db):
+    from sqlalchemy import text as _sa_text
+
+    db.execute(_sa_text("""
+        CREATE TABLE IF NOT EXISTS iad_training_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ot_id INTEGER,
+            texto_dictado TEXT,
+            plantilla_nombre TEXT,
+            plantilla_id TEXT,
+            hallazgos_detectados TEXT,
+            resultado_primario TEXT,
+            resultado_revisado TEXT,
+            modelo TEXT,
+            metadata_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+
+    db.execute(_sa_text("""
+        CREATE INDEX IF NOT EXISTS idx_iad_training_samples_ot_id
+        ON iad_training_samples(ot_id)
+    """))
+
+    db.execute(_sa_text("""
+        CREATE TABLE IF NOT EXISTS iad_training_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sample_id INTEGER,
+            ot_id INTEGER,
+            accion TEXT,
+            detalle TEXT,
+            resultado_revisado TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+
+    db.commit()
+
+
+def _iad_hr3_now():
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _iad_hr3_session(request):
+    try:
+        return request.session or {}
+    except Exception:
+        return {}
+
+
+def _iad_hr3_username(request):
+    sess = _iad_hr3_session(request)
+    return (
+        sess.get("username")
+        or sess.get("user")
+        or sess.get("email")
+        or sess.get("login")
+        or "admin"
+    )
+
+
+def _iad_hr3_logged(request):
+    sess = _iad_hr3_session(request)
+    return any(sess.get(k) for k in ["user_id", "iad_user_id", "uid", "username", "user", "email", "role", "is_admin"])
+
+
+def _iad_hr3_admin(request):
+    sess = _iad_hr3_session(request)
+
+    for key in ("is_admin", "admin"):
+        value = sess.get(key)
+        if value is True or str(value).lower() in {"1", "true", "yes", "admin"}:
+            return True
+
+    role = str(sess.get("role") or sess.get("rol") or "").lower()
+    if role in {"admin", "administrator", "superadmin"}:
+        return True
+
+    username = str(sess.get("username") or sess.get("user") or "").lower()
+    if username in {"admin", "egidio"}:
+        return True
+
+    return False
+
+
+def _iad_hr3_require_admin(request):
+    if not _iad_hr3_logged(request):
+        return _IAD_HR3_RedirectResponse("/iad/login", status_code=303)
+
+    if not _iad_hr3_admin(request):
+        return _IAD_HR3_Response("Forbidden: admin required", status_code=403)
+
+    return None
+
+
+def _iad_hr3_int_or_none(value):
+    try:
+        if str(value).strip() == "":
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _iad_hr3_clean_json(raw):
+    import json as _json
+
+    try:
+        parsed = _json.loads(raw or "{}")
+        return _json.dumps(parsed, ensure_ascii=False, indent=2)
+    except Exception:
+        return "{}"
+
+
+def _iad_hr3_cols_info(db, table_name):
+    from sqlalchemy import text as _sa_text
+
+    try:
+        rows = db.execute(_sa_text('PRAGMA table_info("' + table_name + '")')).fetchall()
+        out = []
+        for r in rows:
+            out.append({
+                "cid": r[0],
+                "name": r[1],
+                "type": r[2] or "",
+                "notnull": bool(r[3]),
+                "default": r[4],
+                "pk": bool(r[5]),
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _iad_hr3_cols(db, table_name):
+    return [c["name"] for c in _iad_hr3_cols_info(db, table_name)]
+
+
+def _iad_hr3_table_count(db, table_name):
+    from sqlalchemy import text as _sa_text
+
+    try:
+        row = db.execute(_sa_text('SELECT COUNT(*) FROM "' + table_name + '"')).fetchone()
+        return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
+def _iad_hr3_find_history_table(db):
+    from sqlalchemy import text as _sa_text
+
+    rows = db.execute(_sa_text("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")).fetchall()
+    candidates = []
+
+    for row in rows:
+        table = row[0]
+        tl = table.lower()
+
+        if any(x in tl for x in ["training", "template", "plantilla", "user", "usuario", "session", "alembic", "place", "lugar"]):
+            continue
+
+        info = _iad_hr3_cols_info(db, table)
+        cols = [c["name"] for c in info]
+        cl = [c.lower() for c in cols]
+
+        if "id" not in cols:
+            continue
+
+        score = 0
+
+        if any(x in tl for x in ["ot", "orden", "trabajo", "work", "job", "request", "historial", "history"]):
+            score += 35
+
+        if any(c in cl for c in ["estado", "status"]):
+            score += 40
+
+        if any(c in cl for c in ["timestamp", "created_at", "creado_en", "fecha", "fecha_creacion"]):
+            score += 35
+
+        if any(c in cl for c in ["usuario", "user", "username"]):
+            score += 25
+
+        if any(c in cl for c in ["tipo", "tipo_informe", "report_type"]):
+            score += 15
+
+        if any(c in cl for c in ["modalidad", "modality"]):
+            score += 15
+
+        if any(c in cl for c in ["titulo", "title", "report_title"]):
+            score += 15
+
+        if any(c in cl for c in ["paciente", "patient", "patient_name", "nombre_paciente"]):
+            score += 10
+
+        if any(c in cl for c in ["edad", "age"]):
+            score += 10
+
+        if any(c in cl for c in ["resultado", "resultado_final", "informe_final", "texto_final", "informe", "output"]):
+            score += 20
+
+        count = _iad_hr3_table_count(db, table)
+        if count > 0:
+            score += 10
+
+        # Evitar tablas demasiado pobres.
+        if score >= 60:
+            candidates.append({
+                "table": table,
+                "score": score,
+                "count": count,
+                "columns": cols,
+                "info": info,
+            })
+
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+
+    if not candidates:
+        return None
+
+    return candidates[0]
+
+
+def _iad_hr3_first_col(cols, possible):
+    for name in possible:
+        if name in cols:
+            return name
+    return None
+
+
+def _iad_hr3_infer_modalidad(plantilla_nombre, modalidad):
+    raw = ((modalidad or "") + " " + (plantilla_nombre or "")).strip().lower()
+
+    if raw.startswith("tc") or "tomografia" in raw or "tac" in raw:
+        return "TC"
+    if raw.startswith("rm") or "resonancia" in raw:
+        return "RM"
+    if raw.startswith("rx") or "radiografia" in raw:
+        return "RX"
+    if raw.startswith("us") or "ecografia" in raw or "ultrasonido" in raw or raw.startswith("eco"):
+        return "US"
+    if raw.startswith("mg") or "mamografia" in raw:
+        return "MG"
+
+    return modalidad or ""
+
+
+def _iad_hr3_insert_training_sample(
+    db,
+    ot_id,
+    texto_dictado,
+    plantilla_nombre,
+    plantilla_id,
+    hallazgos_detectados,
+    resultado_primario,
+    resultado_revisado,
+    modelo,
+    metadata_json,
+):
+    from sqlalchemy import text as _sa_text
+
+    _iad_hr3_ensure_training_tables(db)
+
+    result = db.execute(
+        _sa_text("""
+            INSERT INTO iad_training_samples (
+                ot_id,
+                texto_dictado,
+                plantilla_nombre,
+                plantilla_id,
+                hallazgos_detectados,
+                resultado_primario,
+                resultado_revisado,
+                modelo,
+                metadata_json,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                :ot_id,
+                :texto_dictado,
+                :plantilla_nombre,
+                :plantilla_id,
+                :hallazgos_detectados,
+                :resultado_primario,
+                :resultado_revisado,
+                :modelo,
+                :metadata_json,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            )
+        """),
+        {
+            "ot_id": ot_id,
+            "texto_dictado": texto_dictado or "",
+            "plantilla_nombre": plantilla_nombre or "",
+            "plantilla_id": plantilla_id or "",
+            "hallazgos_detectados": hallazgos_detectados or "",
+            "resultado_primario": resultado_primario or "",
+            "resultado_revisado": resultado_revisado or "",
+            "modelo": modelo or "",
+            "metadata_json": _iad_hr3_clean_json(metadata_json),
+        },
+    )
+
+    sample_id = getattr(result, "lastrowid", None)
+
+    if not sample_id:
+        row = db.execute(_sa_text("SELECT last_insert_rowid()")).fetchone()
+        sample_id = row[0] if row else None
+
+    db.commit()
+    return sample_id
+
+
+def _iad_hr3_insert_training_audit(db, sample_id, ot_id, plantilla_nombre, hallazgos_detectados, resultado_revisado):
+    from sqlalchemy import text as _sa_text
+
+    _iad_hr3_ensure_training_tables(db)
+
+    db.execute(
+        _sa_text("""
+            INSERT INTO iad_training_history (
+                sample_id,
+                ot_id,
+                accion,
+                detalle,
+                resultado_revisado,
+                created_at
+            )
+            VALUES (
+                :sample_id,
+                :ot_id,
+                'guardar_revision',
+                :detalle,
+                :resultado_revisado,
+                CURRENT_TIMESTAMP
+            )
+        """),
+        {
+            "sample_id": sample_id,
+            "ot_id": ot_id,
+            "detalle": "plantilla=" + (plantilla_nombre or "") + "; hallazgos_len=" + str(len(hallazgos_detectados or "")),
+            "resultado_revisado": resultado_revisado or "",
+        },
+    )
+
+    db.commit()
+
+
+def _iad_hr3_save_real_history(
+    db,
+    request,
+    ot_id,
+    texto_dictado,
+    plantilla_nombre,
+    plantilla_id,
+    hallazgos_detectados,
+    resultado_primario,
+    resultado_revisado,
+    modelo,
+    metadata_json,
+    tipo,
+    modalidad,
+    titulo,
+    paciente,
+    edad,
+    dry_run,
+):
+    from sqlalchemy import text as _sa_text
+
+    chosen = _iad_hr3_find_history_table(db)
+
+    detail = {
+        "ok": False,
+        "reason": "",
+        "table": "",
+        "mode": "",
+        "ot_id": ot_id,
+        "columns_written": [],
+        "candidate": chosen,
+    }
+
+    if not chosen:
+        detail["reason"] = "no_encontre_tabla_real_de_historial"
+        return detail
+
+    table = chosen["table"]
+    cols = chosen["columns"]
+    info = chosen["info"]
+
+    detail["table"] = table
+
+    now = _iad_hr3_now()
+    username = _iad_hr3_username(request)
+
+    modalidad_final = _iad_hr3_infer_modalidad(plantilla_nombre, modalidad)
+    titulo_final = titulo or plantilla_nombre or ""
+    tipo_final = tipo or plantilla_nombre or ""
+
+    # Mapeo de datos a columnas reales.
+    mapping = {}
+
+    def set_first(possible, value):
+        col = _iad_hr3_first_col(cols, possible)
+        if col:
+            mapping[col] = value if value is not None else ""
+            return col
+        return None
+
+    set_first(["usuario", "user", "username"], username)
+    set_first(["timestamp", "created_at", "creado_en", "fecha", "fecha_creacion"], now)
+    set_first(["updated_at", "actualizado_en", "modified_at"], now)
+    set_first(["estado", "status"], "validated")
+
+    set_first(["tipo", "tipo_informe", "report_type"], tipo_final)
+    set_first(["modalidad", "modality"], modalidad_final)
+    set_first(["titulo", "title", "report_title"], titulo_final)
+
+    set_first(["paciente", "patient", "patient_name", "nombre_paciente"], paciente or "")
+    set_first(["edad", "age"], edad or "")
+
+    set_first(["texto_dictado", "transcripcion", "texto_transcrito", "input_text", "entrada", "texto_entrada"], texto_dictado or "")
+    set_first(["hallazgos_detectados", "hallazgos", "findings"], hallazgos_detectados or "")
+    set_first(["resultado_primario", "resultado_ai", "resultado_ia", "draft", "borrador"], resultado_primario or "")
+    set_first(
+        ["resultado_revisado", "resultado_final", "informe_final", "texto_final", "final_text", "resultado", "informe", "output", "salida", "texto_resultado", "contenido_final"],
+        resultado_revisado or "",
+    )
+
+    set_first(["plantilla_nombre", "plantilla", "template_name", "template"], plantilla_nombre or "")
+    set_first(["plantilla_id", "template_id"], plantilla_id or "")
+    set_first(["modelo", "model"], modelo or "")
+
+    if dry_run:
+        detail["ok"] = True
+        detail["reason"] = "dry_run"
+        detail["planned_mapping"] = mapping
+        return detail
+
+    # Si viene ot_id y existe, actualizar. Si no, insertar fila nueva.
+    exists = None
+
+    if ot_id is not None:
+        try:
+            exists = db.execute(
+                _sa_text('SELECT id FROM "' + table + '" WHERE id = :id LIMIT 1'),
+                {"id": ot_id},
+            ).fetchone()
+        except Exception:
+            exists = None
+
+    if exists:
+        assignments = []
+        params = {"id": ot_id}
+
+        for col, value in mapping.items():
+            if col == "id":
+                continue
+            assignments.append('"' + col + '" = :' + col)
+            params[col] = value
+
+        if not assignments:
+            detail["reason"] = "sin_columnas_actualizables"
+            return detail
+
+        sql = 'UPDATE "' + table + '" SET ' + ", ".join(assignments) + " WHERE id = :id"
+        db.execute(_sa_text(sql), params)
+        db.commit()
+
+        detail["ok"] = True
+        detail["mode"] = "update"
+        detail["reason"] = "historial_actualizado"
+        detail["ot_id"] = ot_id
+        detail["columns_written"] = list(mapping.keys())
+        return detail
+
+    # Insertar nueva OT/historial.
+    insert_cols = []
+    params = {}
+
+    for col, value in mapping.items():
+        if col == "id":
+            continue
+        insert_cols.append(col)
+        params[col] = value
+
+    # Completar columnas NOT NULL sin default que no estén cubiertas.
+    for c in info:
+        col = c["name"]
+        ctype = str(c["type"] or "").upper()
+
+        if c["pk"]:
+            continue
+
+        if not c["notnull"]:
+            continue
+
+        if c["default"] is not None:
+            continue
+
+        if col in params:
+            continue
+
+        if "INT" in ctype:
+            params[col] = 0
+        else:
+            params[col] = ""
+
+        insert_cols.append(col)
+
+    if not insert_cols:
+        detail["reason"] = "sin_columnas_insertables"
+        return detail
+
+    quoted_cols = ['"' + c + '"' for c in insert_cols]
+    placeholders = [":" + c for c in insert_cols]
+
+    sql = 'INSERT INTO "' + table + '" (' + ", ".join(quoted_cols) + ') VALUES (' + ", ".join(placeholders) + ')'
+
+    db.execute(_sa_text(sql), params)
+
+    row = db.execute(_sa_text("SELECT last_insert_rowid()")).fetchone()
+    new_ot_id = row[0] if row else None
+
+    db.commit()
+
+    detail["ok"] = True
+    detail["mode"] = "insert"
+    detail["reason"] = "historial_creado"
+    detail["ot_id"] = new_ot_id
+    detail["columns_written"] = insert_cols
+    return detail
+
+
+@router.post("/iad/guardar-revision-y-historial-v3.json")
+async def iad_guardar_revision_y_historial_v3_json(
+    request: _IAD_HR3_Request,
+    ot_id: str = _IAD_HR3_Form(""),
+    texto_dictado: str = _IAD_HR3_Form(""),
+    plantilla_nombre: str = _IAD_HR3_Form(""),
+    plantilla_id: str = _IAD_HR3_Form(""),
+    hallazgos_detectados: str = _IAD_HR3_Form(""),
+    resultado_primario: str = _IAD_HR3_Form(""),
+    resultado_revisado: str = _IAD_HR3_Form(""),
+    modelo: str = _IAD_HR3_Form(""),
+    metadata_json: str = _IAD_HR3_Form("{}"),
+    tipo: str = _IAD_HR3_Form(""),
+    modalidad: str = _IAD_HR3_Form(""),
+    titulo: str = _IAD_HR3_Form(""),
+    paciente: str = _IAD_HR3_Form(""),
+    edad: str = _IAD_HR3_Form(""),
+    dry_run: str = _IAD_HR3_Form("0"),
+    db = _IAD_HR3_Depends(_IAD_HR3_get_db),
+):
+    dry = str(dry_run).lower() in {"1", "true", "yes", "si", "sí"}
+
+    ot_id_int = _iad_hr3_int_or_none(ot_id)
+
+    history_sync = _iad_hr3_save_real_history(
+        db=db,
+        request=request,
+        ot_id=ot_id_int,
+        texto_dictado=texto_dictado,
+        plantilla_nombre=plantilla_nombre,
+        plantilla_id=plantilla_id,
+        hallazgos_detectados=hallazgos_detectados,
+        resultado_primario=resultado_primario,
+        resultado_revisado=resultado_revisado,
+        modelo=modelo,
+        metadata_json=metadata_json,
+        tipo=tipo,
+        modalidad=modalidad,
+        titulo=titulo,
+        paciente=paciente,
+        edad=edad,
+        dry_run=dry,
+    )
+
+    if dry:
+        return _IAD_HR3_JSONResponse({
+            "ok": True,
+            "dry_run": True,
+            "historial_sync": history_sync,
+        })
+
+    sample_id = _iad_hr3_insert_training_sample(
+        db=db,
+        ot_id=history_sync.get("ot_id") or ot_id_int,
+        texto_dictado=texto_dictado,
+        plantilla_nombre=plantilla_nombre,
+        plantilla_id=plantilla_id,
+        hallazgos_detectados=hallazgos_detectados,
+        resultado_primario=resultado_primario,
+        resultado_revisado=resultado_revisado,
+        modelo=modelo,
+        metadata_json=metadata_json,
+    )
+
+    _iad_hr3_insert_training_audit(
+        db=db,
+        sample_id=sample_id,
+        ot_id=history_sync.get("ot_id") or ot_id_int,
+        plantilla_nombre=plantilla_nombre,
+        hallazgos_detectados=hallazgos_detectados,
+        resultado_revisado=resultado_revisado,
+    )
+
+    return _IAD_HR3_JSONResponse({
+        "ok": True,
+        "sample_id": sample_id,
+        "ot_id": history_sync.get("ot_id") or ot_id_int,
+        "historial_sync": history_sync,
+    })
+
+
+@router.post("/iad/admin/training/delete-selected-v3.json")
+async def iad_admin_training_delete_selected_v3_json(
+    request: _IAD_HR3_Request,
+    ids: list[str] = _IAD_HR3_Form([]),
+    db = _IAD_HR3_Depends(_IAD_HR3_get_db),
+):
+    from sqlalchemy import text as _sa_text
+
+    denied = _iad_hr3_require_admin(request)
+    if denied:
+        return denied
+
+    _iad_hr3_ensure_training_tables(db)
+
+    clean_ids = []
+    for value in ids:
+        parsed = _iad_hr3_int_or_none(value)
+        if parsed is not None:
+            clean_ids.append(parsed)
+
+    clean_ids = sorted(set(clean_ids))
+
+    if not clean_ids:
+        return _IAD_HR3_JSONResponse({"ok": False, "error": "sin_ids", "deleted": 0}, status_code=400)
+
+    placeholders = []
+    params = {}
+
+    for idx, sample_id in enumerate(clean_ids):
+        key = "id_" + str(idx)
+        placeholders.append(":" + key)
+        params[key] = sample_id
+
+    in_sql = ", ".join(placeholders)
+
+    before = db.execute(
+        _sa_text("SELECT COUNT(*) FROM iad_training_samples WHERE id IN (" + in_sql + ")"),
+        params,
+    ).fetchone()[0]
+
+    db.execute(
+        _sa_text("DELETE FROM iad_training_samples WHERE id IN (" + in_sql + ")"),
+        params,
+    )
+
+    db.execute(
+        _sa_text("DELETE FROM iad_training_history WHERE sample_id IN (" + in_sql + ")"),
+        params,
+    )
+
+    db.commit()
+
+    return _IAD_HR3_JSONResponse({
+        "ok": True,
+        "deleted": before,
+        "ids": clean_ids,
+    })
