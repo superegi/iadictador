@@ -1,5 +1,10 @@
 FROM python:3.12-slim
 
+# IAD_AUDIO_FIRST_FFMPEG_V1
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/code:/code/app

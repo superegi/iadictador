@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["ok", "informe_final", "hallazgos_estructurados", "mapa_aplicacion", "advertencias", "confianza"],
+  "properties": {
+    "ok": {"type": "boolean"},
+    "informe_final": {"type": "string"},
+    "hallazgos_estructurados": {"type": "array"},
+    "mapa_aplicacion": {"type": "array"},
+    "advertencias": {"type": "array"},
+    "confianza": {"type": "string"}
+  }
+}

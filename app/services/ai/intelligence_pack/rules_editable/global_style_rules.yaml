@@ -1,0 +1,23 @@
+version: 1
+name: Reglas globales IA Dictador
+
+rules:
+  - id: preserve_template
+    enabled: true
+    instruction: "Conservar la estructura completa de la plantilla. No transformar en resumen libre."
+
+  - id: no_invention
+    enabled: true
+    instruction: "No inventar hallazgos no dictados."
+
+  - id: uncertainty_warning
+    enabled: true
+    instruction: "Si una medida, lateralidad o localización no es clara, conservar advertencia."
+
+  - id: final_report_ready
+    enabled: true
+    instruction: "El informe final debe quedar listo para copiar al RIS/PACS."
+
+  - id: learn_from_corrections
+    enabled: true
+    instruction: "Usar correcciones previas similares como ejemplos de estilo y criterio."

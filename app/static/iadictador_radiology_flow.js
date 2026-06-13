@@ -506,7 +506,12 @@ return data;
 
     if (sync.ok) setStatus("Revisión guardada. Historial actualizado: OT #" + (data.ot_id || sync.ot_id || ""));
     else setStatus("Revisión guardada. Historial no sincronizado: " + (sync.reason || "sin detalle"));
-  }
+  
+    // IAD_FIX_RAD_SAVE_CALL_COPY_NEW_OT_V2
+    if (window.iadPostSaveCopyAndNewOt) {
+      await window.iadPostSaveCopyAndNewOt((typeof report !== "undefined" ? report : null), data, setStatus);
+    }
+}
 
   function copyRevised() {
     const report = document.getElementById("iad-rad-one-revised-report");
@@ -4243,3 +4248,148 @@ return data;
   }, 1000);
 
 })();
+
+
+// IAD_FIX_RAD_SAVE_COPY_NEW_OT_V2
+(function () {
+  if (window.iadPostSaveCopyAndNewOt) return;
+
+  function iadVisible(el) {
+    if (!el) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (style && (style.display === "none" || style.visibility === "hidden")) return false;
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  }
+
+  function iadTextOf(el) {
+    if (!el) return "";
+    if ("value" in el) return String(el.value || "");
+    return String(el.textContent || "");
+  }
+
+  function iadFindBestReportArea() {
+    const direct = [
+      document.getElementById("finalReport"),
+      document.getElementById("iad-rad-one-final-report"),
+      document.getElementById("iad-rad-final-report"),
+      document.querySelector('textarea[name="resultado_revisado"]'),
+      document.querySelector('textarea[name="final_report"]'),
+      document.querySelector('textarea[name="informe_final"]')
+    ].filter(Boolean);
+
+    for (const el of direct) {
+      if (iadTextOf(el).trim()) return el;
+    }
+
+    const areas = Array.from(document.querySelectorAll("textarea, pre, code"))
+      .filter(el => iadVisible(el) && iadTextOf(el).trim());
+
+    function score(el) {
+      const txt = iadTextOf(el);
+      const idn = String((el.id || "") + " " + (el.name || "") + " " + (el.className || "")).toLowerCase();
+      let s = Math.min(txt.length, 2000);
+      if (/final|limpio|revisado|resultado|informe/.test(idn)) s += 3000;
+      if (/impresi[oó]n|diagn[oó]stica|hallazgos/i.test(txt)) s += 2000;
+      if (/transcripci[oó]n|informaci[oó]n principal/i.test(idn)) s -= 1500;
+      return s;
+    }
+
+    areas.sort((a, b) => score(b) - score(a));
+    return areas[0] || null;
+  }
+
+  async function iadCopyText(text, area) {
+    const clean = String(text || "");
+    if (!clean.trim()) return false;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(clean);
+      return true;
+    }
+
+    if (area && "select" in area) {
+      area.focus();
+      area.select();
+      document.execCommand("copy");
+      return true;
+    }
+
+    const tmp = document.createElement("textarea");
+    tmp.value = clean;
+    tmp.style.position = "fixed";
+    tmp.style.left = "-9999px";
+    document.body.appendChild(tmp);
+    tmp.focus();
+    tmp.select();
+    document.execCommand("copy");
+    tmp.remove();
+    return true;
+  }
+
+  window.iadPostSaveCopyAndNewOt = async function (reportEl, data, setStatus) {
+    if (window.__iadPostSaveCopyAndNewOtRunning) return true;
+
+    function st(msg) {
+      try {
+        if (typeof setStatus === "function") setStatus(msg);
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    const payload = data || {};
+    const sync = payload.historial_sync || {};
+    const sampleId = payload.sample_id || payload.training_sample_id || payload.id || "";
+    const otId = payload.ot_id || sync.ot_id || "";
+
+    if (payload.ok === false) {
+      const msg = payload.error || "El backend respondió ok=false.";
+      st("No se guardó la revisión: " + msg);
+      alert("No se guardó la revisión:\n" + msg);
+      return false;
+    }
+
+    if (!sampleId) {
+      st("Respuesta de guardado sin sample_id. No se redirige.");
+      alert("La respuesta de guardado no trajo sample_id.\nNo te saco de la OT para evitar perder el trabajo.");
+      return false;
+    }
+
+    if (sync && sync.ok === false) {
+      const reason = sync.reason || "sin detalle";
+      st("Training guardado, pero Historial NO sincronizado: " + reason);
+      alert(
+        "Training IA parece guardado, pero Historial NO quedó sincronizado.\n\n" +
+        "Motivo: " + reason + "\n\n" +
+        "No te saco de la OT para evitar perder el trabajo."
+      );
+      return false;
+    }
+
+    window.__iadPostSaveCopyAndNewOtRunning = true;
+
+    const area = reportEl || iadFindBestReportArea();
+    const text = iadTextOf(area);
+
+    try {
+      await iadCopyText(text, area);
+      st("Revisión guardada. Informe copiado. Abriendo nueva OT...");
+    } catch (copyErr) {
+      console.warn("No se pudo copiar automáticamente", copyErr);
+      try {
+        if (area && "select" in area) {
+          area.focus();
+          area.select();
+        }
+      } catch (e) {}
+      st("Revisión guardada. No pude copiar automáticamente. Abriendo nueva OT...");
+    }
+
+    setTimeout(function () {
+      window.location.assign("/iad/trabajo");
+    }, 650);
+
+    return true;
+  };
+})();
+

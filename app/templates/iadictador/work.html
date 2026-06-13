@@ -526,7 +526,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (recorder && recorder.state === "recording") {
         recorder.stop();
       }
-    }, 60000);
+    }, 120000);
   }
 
   function stopRecordingSession() {
@@ -1008,7 +1008,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <!-- IAD_AUDIO_MULTI_UI_START -->
 <div class="audio-panel">
   <label>Audio principal</label>
-  <p class="muted">Puedes grabar o subir varios audios. Cada grabación se corta automáticamente al minuto y continúa como otro archivo.</p>
+  <p class="muted">Puedes grabar o subir varios audios. Cada grabación se corta automáticamente cada 2 minutos y continúa como otro archivo.</p>
 
   <input type="file" id="audio_files_picker" accept="audio/*" multiple>
 
@@ -1368,7 +1368,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
       if (sync.ok) setStatus("Revisión guardada. Historial actualizado: OT #" + (data.ot_id || sync.ot_id || ""));
       else setStatus("Revisión guardada. Historial no sincronizado: " + (sync.reason || "sin detalle"));
-    } catch (err) {
+    
+      // IAD_FIX_RAD_SAVE_CALL_COPY_NEW_OT_V2
+      if (window.iadPostSaveCopyAndNewOt) {
+        await window.iadPostSaveCopyAndNewOt((typeof report !== "undefined" ? report : null), data, setStatus);
+      }
+} catch (err) {
       console.error(err);
       setStatus("Error al guardar: " + err.message);
       alert("Error al guardar: " + err.message);
@@ -1872,7 +1877,7 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 })();
 </script>
-<script src="/static/iadictador_radiology_flow.js?v=20260613003348"></script>
+<script src="/static/iadictador_radiology_flow.js?v=20260613134317"></script>
 
 
 <script>
@@ -2256,7 +2261,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
       if (sync.ok) setStatus("Revisión guardada. Historial actualizado: OT #" + (data.ot_id || sync.ot_id || ""));
       else setStatus("Revisión guardada. Historial no sincronizado: " + (sync.reason || "sin detalle"));
-    } catch (err) {
+    
+      // IAD_FIX_RAD_SAVE_CALL_COPY_NEW_OT_V2
+      if (window.iadPostSaveCopyAndNewOt) {
+        await window.iadPostSaveCopyAndNewOt((typeof report !== "undefined" ? report : null), data, setStatus);
+      }
+} catch (err) {
       console.error(err);
       setStatus("Error al guardar: " + err.message);
       alert("Error al guardar: " + err.message);

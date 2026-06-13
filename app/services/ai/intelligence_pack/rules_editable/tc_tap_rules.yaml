@@ -1,0 +1,50 @@
+version: 1
+name: TC Torax abdomen pelvis CC
+scope:
+  template_names:
+    - TC Torax, abdomen y pelvis CC
+    - TC Tórax, abdomen y pelvis CC
+
+rules:
+  - id: tc_tap_pulmonary_nodule
+    enabled: true
+    when:
+      finding_contains:
+        - nodulo
+        - pulmon
+    apply:
+      section: torax_parenquima_pulmonar
+      body_sentence: "Parénquima pulmonar: nódulo pulmonar {location} de {size}."
+      impression_sentence: "Nódulo pulmonar {location} de {size}."
+    notes: "Debe aparecer en cuerpo del informe y en impresión si fue dictado."
+
+  - id: tc_tap_renal_lithiasis
+    enabled: true
+    when:
+      finding_contains:
+        - litiasis
+        - renal
+    apply:
+      section: abdomen_rinones_vias_urinarias
+      body_sentence: "Riñones y vías urinarias: se observa litiasis renal {side} no obstructiva de {size}."
+      impression_sentence: "Nefrolitiasis no obstructiva."
+    notes: "No dejar solo en impresión. Debe aparecer en sección renal."
+
+  - id: tc_tap_cardiomegaly
+    enabled: true
+    when:
+      finding_contains:
+        - cardiomegalia
+    apply:
+      section: torax_cardiomediastino
+      body_sentence: "Cardiomediastino: leve cardiomegalia."
+      impression_sentence: "Leve cardiomegalia."
+    notes: "Si el dictado dice leve cardiomegalia, no mantener corazón normal."
+
+  - id: tc_tap_no_contradictory_normals
+    enabled: true
+    when:
+      structured_finding_present: true
+    apply:
+      remove_or_replace_contradictions: true
+    notes: "Si hay hallazgo positivo, reemplazar frases normales contradictorias."

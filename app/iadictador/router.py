@@ -32,6 +32,32 @@ from .security import (
     verify_password,
 )
 
+# IAD_FIX_EXTRACT_INFORMATION_COMPAT_V1
+def extract_information_from_text(source_text, templates=None):
+    """
+    Compatibilidad para endpoint legacy /iad/ot/{id}/extraer-informacion.
+    Evita NameError si el flujo viejo llama extract_information_from_text().
+    """
+    try:
+        from app.services.ai.tasks.info_extractor_v2 import extract_information_from_text_v2
+        return extract_information_from_text_v2(source_text)
+    except Exception:
+        try:
+            from app.services.ai.tasks.info_extractor import extract_information_from_text as _old_extract
+            return _old_extract(source_text)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": f"No se pudo ejecutar extractor legacy: {exc}",
+                "raw_text": source_text,
+                "plantilla_sugerida": None,
+                "informacion_secundaria": {},
+                "hallazgos_radiologicos": source_text or "",
+                "advertencias": ["Extractor legacy no disponible; se devolvió texto fuente como hallazgo bruto."],
+                "necesita_revision": True,
+                "metodo": "compat_fallback",
+            }
+
 router = APIRouter()
 
 IAD_BODY_REGIONS = [
@@ -4599,28 +4625,431 @@ def _iad_is_admin_user(user):
         return False
 
 
+# IAD_CANONICAL_SAVE_TRABAJO_V1
 @router.post("/iad/api/trabajo/guardar_revision.json")
-async def iad_api_guardar_revision_trabajo(request: Request, db = Depends(get_db)):
-    from app.services.iad_work_store import save_work_record
+async def iad_api_trabajo_guardar_revision_json(request: Request, db: Session = Depends(get_db)):
+    """
+    Guardado canónico desde Área de trabajo.
+
+    Objetivo:
+    - Guardar una OT visible en /iad/historial.
+    - Guardar una muestra visible en /iad/admin/training.
+    - Evitar stores paralelos que devuelven 200 OK pero no aparecen en la UI principal.
+    """
+    from datetime import datetime
+    import json
+    import traceback
+    from sqlalchemy import text as sa_text
+    from fastapi.responses import JSONResponse
+
+    def _now_text():
+        return datetime.utcnow().replace(microsecond=0).isoformat(sep=" ")
+
+    def _safe_str(value):
+        if value is None:
+            return ""
+        if isinstance(value, (dict, list, tuple)):
+            try:
+                return json.dumps(value, ensure_ascii=False, default=str)
+            except Exception:
+                return str(value)
+        return str(value)
+
+    def _jsonable(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            v = value.strip()
+            if not v:
+                return None
+            try:
+                return json.loads(v)
+            except Exception:
+                return value
+        return value
+
+    def _json_text(value):
+        try:
+            return json.dumps(value, ensure_ascii=False, default=str, indent=2)
+        except Exception:
+            return json.dumps({"raw": str(value)}, ensure_ascii=False, indent=2)
+
+    def _pick(payload: dict, *keys: str):
+        lower = {str(k).lower(): k for k in payload.keys()}
+        for key in keys:
+            if key in payload:
+                v = payload.get(key)
+            elif key.lower() in lower:
+                v = payload.get(lower[key.lower()])
+            else:
+                continue
+
+            if isinstance(v, list):
+                v = "\n".join(_safe_str(x) for x in v if _safe_str(x).strip())
+            if v is not None and _safe_str(v).strip():
+                return v
+        return ""
+
+    def _table_info(table: str):
+        rows = db.execute(sa_text(f'PRAGMA table_info("{table}")')).fetchall()
+        out = []
+        for r in rows:
+            # cid, name, type, notnull, dflt_value, pk
+            out.append({
+                "cid": r[0],
+                "name": r[1],
+                "type": r[2] or "",
+                "notnull": bool(r[3]),
+                "default": r[4],
+                "pk": bool(r[5]),
+            })
+        return out
+
+    def _table_exists(table: str) -> bool:
+        row = db.execute(
+            sa_text("SELECT name FROM sqlite_master WHERE type='table' AND name=:t"),
+            {"t": table},
+        ).fetchone()
+        return bool(row)
+
+    def _default_for_col(name: str, coltype: str):
+        n = name.lower()
+        t = (coltype or "").lower()
+
+        if n.endswith("_at") or n in {"created_at", "updated_at", "fecha", "fecha_creacion"}:
+            return _now_text()
+        if n in {"status", "estado"}:
+            return "guardada"
+        if n in {"source", "origen"}:
+            return "trabajo_v2"
+        if n in {"modelo", "model"}:
+            return "gpt"
+        if "json" in n:
+            return "{}"
+        if "bool" in t:
+            return 0
+        if "int" in t:
+            return 0
+        if "float" in t or "real" in t:
+            return 0.0
+        return ""
+
+    def _insert_dynamic(table: str, base_values: dict, required_ok: bool = True):
+        if not _table_exists(table):
+            if required_ok:
+                raise RuntimeError(f"No existe tabla requerida: {table}")
+            return None
+
+        info = _table_info(table)
+        cols = []
+        vals = {}
+
+        for col in info:
+            name = col["name"]
+            if col["pk"]:
+                continue
+
+            if name in base_values and base_values[name] is not None:
+                cols.append(name)
+                vals[name] = base_values[name]
+                continue
+
+            # matching case-insensitive
+            found = None
+            for k, v in base_values.items():
+                if str(k).lower() == name.lower() and v is not None:
+                    found = v
+                    break
+
+            if found is not None:
+                cols.append(name)
+                vals[name] = found
+                continue
+
+            if col["notnull"] and col["default"] is None:
+                cols.append(name)
+                vals[name] = _default_for_col(name, col["type"])
+
+        if not cols:
+            raise RuntimeError(f"No hay columnas insertables para {table}")
+
+        quoted_cols = ", ".join(f'"{c}"' for c in cols)
+        params = ", ".join(f":{c}" for c in cols)
+        sql = f'INSERT INTO "{table}" ({quoted_cols}) VALUES ({params})'
+        db.execute(sa_text(sql), vals)
+        new_id = db.execute(sa_text("SELECT last_insert_rowid()")).scalar()
+        return int(new_id)
+
+    def _next_ot_user_number(user_id: int) -> int:
+        if not _table_exists("iad_work_orders"):
+            return 1
+
+        cols = [c["name"] for c in _table_info("iad_work_orders")]
+        if "ot_user_number" not in cols:
+            return 1
+
+        try:
+            if "user_id" in cols:
+                row = db.execute(
+                    sa_text('SELECT MAX(ot_user_number) FROM iad_work_orders WHERE user_id=:uid'),
+                    {"uid": user_id},
+                ).fetchone()
+            else:
+                row = db.execute(sa_text('SELECT MAX(ot_user_number) FROM iad_work_orders')).fetchone()
+            last = row[0] if row and row[0] is not None else 0
+            return int(last) + 1
+        except Exception:
+            return 1
+
+    def _insert_audit(user_id: int, detail: str):
+        if not _table_exists("iad_audit_logs"):
+            return
+        try:
+            base = {
+                "user_id": user_id,
+                "action": "guardar_revision_canonica",
+                "detail": detail,
+                "ip": request.client.host if request.client else "",
+                "user_agent": request.headers.get("user-agent", ""),
+                "created_at": _now_text(),
+            }
+            _insert_dynamic("iad_audit_logs", base, required_ok=False)
+        except Exception:
+            # Auditoría no debe romper guardado clínico.
+            pass
 
     try:
         user = require_user(request, db)
-    except PermissionError:
-        return {"ok": False, "error": "No autenticado"}
 
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                payload = {"raw_payload": payload}
+        else:
+            form = await request.form()
+            payload = {}
+            for key in form.keys():
+                vals = form.getlist(key)
+                payload[key] = vals if len(vals) > 1 else form.get(key)
 
-    username = _iad_username_from_user(user)
+        analysis_raw = _pick(
+            payload,
+            "analysis",
+            "analysis_json",
+            "analisis",
+            "analisis_json",
+            "clinical_analysis",
+            "revision_json",
+        )
+        generated_raw = _pick(
+            payload,
+            "generated",
+            "generated_json",
+            "generation",
+            "generation_json",
+            "informe_generado_json",
+        )
 
-    if not payload.get("final_report"):
-        return {"ok": False, "error": "No hay informe final para guardar"}
+        analysis = _jsonable(analysis_raw) or {}
+        generated = _jsonable(generated_raw) or {}
 
-    result = save_work_record(payload, username=username)
-    return result
+        if not isinstance(analysis, dict):
+            analysis = {"raw": analysis}
+        if not isinstance(generated, dict):
+            generated = {"raw": generated}
 
+        plantilla_obj = analysis.get("plantilla_sugerida") if isinstance(analysis.get("plantilla_sugerida"), dict) else {}
+
+        texto_dictado = _safe_str(_pick(
+            payload,
+            "texto_dictado",
+            "dictated_text",
+            "dictado_original",
+            "source_text",
+            "raw_text",
+            "texto_fuente",
+            "input_text",
+            "inputText",
+            "informacion_principal",
+            "main_text",
+            "transcription",
+            "transcripcion",
+            "audio_transcription",
+            "audio_transcription_final",
+        ))
+
+        plantilla_nombre = _safe_str(_pick(
+            payload,
+            "plantilla_nombre",
+            "template_name",
+            "selected_template_name",
+            "plantilla",
+        ) or plantilla_obj.get("nombre") or generated.get("plantilla_usada", {}).get("nombre") if isinstance(generated.get("plantilla_usada"), dict) else "")
+
+        plantilla_id = _safe_str(_pick(
+            payload,
+            "plantilla_id",
+            "template_id",
+            "selected_template_id",
+        ) or plantilla_obj.get("id") or generated.get("plantilla_usada", {}).get("id") if isinstance(generated.get("plantilla_usada"), dict) else "")
+
+        hallazgos = _safe_str(_pick(
+            payload,
+            "hallazgos_detectados",
+            "hallazgos_radiologicos",
+            "findings",
+            "hallazgos",
+        ) or analysis.get("hallazgos_radiologicos") or analysis.get("hallazgos_detectados") or "")
+
+        resultado_primario = _safe_str(_pick(
+            payload,
+            "resultado_primario",
+            "primary_result",
+            "generated_report",
+            "informe_generado",
+            "informe_primario",
+        ) or generated.get("informe_final") or generated.get("resultado_primario") or "")
+
+        resultado_revisado = _safe_str(_pick(
+            payload,
+            "resultado_revisado",
+            "reviewed_result",
+            "final_report",
+            "finalReport",
+            "informe_final",
+            "informe_limpio",
+            "clean_report",
+            "report",
+        ) or resultado_primario)
+
+        modelo = _safe_str(_pick(payload, "modelo", "model", "ai_model") or "gpt")
+
+        if not texto_dictado.strip() and not resultado_revisado.strip():
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "No llegó texto dictado ni informe final al endpoint de guardado.",
+                    "payload_keys": sorted(list(payload.keys())),
+                },
+                status_code=422,
+            )
+
+        user_id = int(getattr(user, "id", 0) or 0)
+        username = _safe_str(getattr(user, "username", ""))
+
+        ot_user_number = _next_ot_user_number(user_id)
+
+        metadata = {
+            "payload": payload,
+            "analysis": analysis,
+            "generated": generated,
+            "username": username,
+            "user_id": user_id,
+            "saved_by_endpoint": "/iad/api/trabajo/guardar_revision.json",
+            "saved_by_fix": "IAD_CANONICAL_SAVE_TRABAJO_V1",
+            "user_agent": request.headers.get("user-agent", ""),
+        }
+
+        now = _now_text()
+
+        work_base = {
+            "user_id": user_id,
+            "username": username,
+            "ot_user_number": ot_user_number,
+            "status": "guardada",
+            "estado": "guardada",
+            "created_at": now,
+            "updated_at": now,
+            "template_name": plantilla_nombre,
+            "plantilla_nombre": plantilla_nombre,
+            "selected_template_name": plantilla_nombre,
+            "template_id": plantilla_id,
+            "plantilla_id": plantilla_id,
+            "selected_template_id": plantilla_id,
+            "modality": _safe_str(_pick(payload, "modality", "modalidad")),
+            "modalidad": _safe_str(_pick(payload, "modality", "modalidad")),
+            "input_text": texto_dictado,
+            "input_text_initial": texto_dictado,
+            "input_text_final": texto_dictado,
+            "source_text": texto_dictado,
+            "raw_text": texto_dictado,
+            "texto_dictado": texto_dictado,
+            "dictado_original": texto_dictado,
+            "audio_transcription_final": texto_dictado,
+            "hallazgos": hallazgos,
+            "hallazgos_radiologicos": hallazgos,
+            "findings": hallazgos,
+            "resultado_primario": resultado_primario,
+            "resultado_revisado": resultado_revisado,
+            "final_report": resultado_revisado,
+            "informe_final": resultado_revisado,
+            "report": resultado_revisado,
+            "report_text": resultado_revisado,
+            "analysis_json": _json_text(analysis),
+            "generated_json": _json_text(generated),
+            "metadata_json": _json_text(metadata),
+            "saved_to_history": 1,
+            "saved_to_training": 1,
+        }
+
+        ot_id = _insert_dynamic("iad_work_orders", work_base, required_ok=True)
+
+        training_base = {
+            "ot_id": ot_id,
+            "texto_dictado": texto_dictado,
+            "plantilla_nombre": plantilla_nombre,
+            "plantilla_id": plantilla_id,
+            "hallazgos_detectados": hallazgos,
+            "resultado_primario": resultado_primario,
+            "resultado_revisado": resultado_revisado,
+            "modelo": modelo,
+            "metadata_json": _json_text(metadata),
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        sample_id = _insert_dynamic("iad_training_samples", training_base, required_ok=True)
+
+        _insert_audit(
+            user_id,
+            f"guardado_canonico; ot_id={ot_id}; sample_id={sample_id}; plantilla={plantilla_nombre}; dictado_len={len(texto_dictado)}; resultado_len={len(resultado_revisado)}",
+        )
+
+        db.commit()
+
+        return {
+            "ok": True,
+            "id": sample_id,
+            "sample_id": sample_id,
+            "training_sample_id": sample_id,
+            "ot_id": ot_id,
+            "ot_user_number": ot_user_number,
+            "historial_sync": {
+                "ok": True,
+                "ot_id": ot_id,
+                "ot_user_number": ot_user_number,
+            },
+            "saved_to_history": True,
+            "saved_to_training": True,
+            "message": "Guardado canónico en Historial y Training IA.",
+        }
+
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": str(exc),
+                "traceback": traceback.format_exc()[-4000:],
+                "saved_by_fix": "IAD_CANONICAL_SAVE_TRABAJO_V1",
+            },
+            status_code=500,
+        )
 
 @router.get("/iad/api/trabajo/historial.json")
 def iad_api_trabajo_historial(request: Request, db = Depends(get_db), limit: int = 50):
@@ -4677,4 +5106,1599 @@ def iad_training_page(request: Request, db = Depends(get_db)):
         },
         db,
     )
+
+
+
+# IAD_AUDIO_FIRST_ENDPOINTS_V1
+from fastapi import File as IAD_AUDIO_File
+from fastapi import Form as IAD_AUDIO_Form
+from fastapi import UploadFile as IAD_AUDIO_UploadFile
+
+
+@router.post("/iad/api/audio/componer.json")
+async def iad_api_audio_componer_json(
+    request: Request,
+    audio_files: list[IAD_AUDIO_UploadFile] = IAD_AUDIO_File(...),
+    segments_metadata_json: str = IAD_AUDIO_Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_user(request, db)
+    from app.services.ai.tasks.audio_first_flow import compose_endpoint_response
+
+    return await compose_endpoint_response(
+        audio_files=audio_files,
+        segments_metadata_json=segments_metadata_json,
+        username=getattr(user, "username", "") or "",
+    )
+
+
+@router.post("/iad/api/audio/procesar-dictado-completo.json")
+async def iad_api_audio_procesar_dictado_completo_json(
+    request: Request,
+    audio_files: list[IAD_AUDIO_UploadFile] = IAD_AUDIO_File(...),
+    segments_metadata_json: str = IAD_AUDIO_Form(""),
+    extra_context: str = IAD_AUDIO_Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_user(request, db)
+    from app.services.ai.tasks.audio_first_flow import process_endpoint_response
+
+    return await process_endpoint_response(
+        audio_files=audio_files,
+        segments_metadata_json=segments_metadata_json,
+        extra_context=extra_context,
+        username=getattr(user, "username", "") or "",
+        db=db,
+    )
+
+
+# IAD_TRAINING_CORRECTIONS_ENDPOINTS_V2
+# Endpoints para aprendizaje por correcciones médico-IA.
+# Crea tabla bajo demanda: iad_training_corrections.
+
+def _iad_training_v2_username(request):
+    try:
+        sess = getattr(request, "session", None)
+        if isinstance(sess, dict):
+            return (
+                sess.get("username")
+                or sess.get("user")
+                or sess.get("usuario")
+                or sess.get("email")
+                or "unknown"
+            )
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _iad_training_v2_json_dumps(value):
+    import json
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        return str(value)
+
+
+def _iad_training_v2_dialect(db):
+    try:
+        return db.bind.dialect.name
+    except Exception:
+        try:
+            return db.get_bind().dialect.name
+        except Exception:
+            return "unknown"
+
+
+def _iad_training_v2_ensure_table(db):
+    from sqlalchemy import text
+
+    dialect = _iad_training_v2_dialect(db)
+
+    if dialect == "postgresql":
+        ddl = """
+        CREATE TABLE IF NOT EXISTS iad_training_corrections (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            usuario TEXT,
+            template_name TEXT,
+            dictado_original TEXT,
+            transcripcion TEXT,
+            clinical_json TEXT,
+            informe_ia TEXT,
+            informe_corregido TEXT,
+            diferencias_detectadas TEXT,
+            modelo_usado TEXT,
+            metadata_json TEXT,
+            source TEXT
+        )
+        """
+    else:
+        ddl = """
+        CREATE TABLE IF NOT EXISTS iad_training_corrections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            usuario TEXT,
+            template_name TEXT,
+            dictado_original TEXT,
+            transcripcion TEXT,
+            clinical_json TEXT,
+            informe_ia TEXT,
+            informe_corregido TEXT,
+            diferencias_detectadas TEXT,
+            modelo_usado TEXT,
+            metadata_json TEXT,
+            source TEXT
+        )
+        """
+
+    db.execute(text(ddl))
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+
+def _iad_training_v2_diff(informe_ia, informe_corregido):
+    import difflib
+
+    a = (informe_ia or "").splitlines()
+    b = (informe_corregido or "").splitlines()
+
+    diff = difflib.unified_diff(
+        a,
+        b,
+        fromfile="informe_ia",
+        tofile="informe_corregido",
+        lineterm=""
+    )
+
+    return "\n".join(list(diff)[:500])
+
+
+@router.post("/iad/api/training/corrections/save.json")
+async def iad_training_corrections_save_v2(request: Request, db = Depends(get_db)):
+    from sqlalchemy import text
+
+    _iad_training_v2_ensure_table(db)
+
+    payload = await request.json()
+
+    usuario = _iad_training_v2_username(request)
+    template_name = payload.get("template_name") or payload.get("plantilla_nombre") or ""
+    dictado_original = payload.get("dictado_original") or payload.get("source_text") or ""
+    transcripcion = payload.get("transcripcion") or payload.get("transcription") or ""
+    clinical_json = payload.get("clinical_json") or payload.get("hallazgos_estructurados") or {}
+    informe_ia = payload.get("informe_ia") or payload.get("model_report") or ""
+    informe_corregido = payload.get("informe_corregido") or payload.get("corrected_report") or ""
+    modelo_usado = payload.get("modelo_usado") or payload.get("model") or ""
+    source = payload.get("source") or "work_v2_final_report_button"
+
+    if not str(informe_corregido or "").strip():
+        return {"ok": False, "error": "informe_corregido vacío"}
+
+    diferencias_detectadas = _iad_training_v2_diff(informe_ia, informe_corregido)
+
+    metadata = dict(payload)
+    metadata.pop("informe_corregido", None)
+    metadata.pop("corrected_report", None)
+
+    sql = text("""
+        INSERT INTO iad_training_corrections (
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_corregido,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source
+        )
+        VALUES (
+            :usuario,
+            :template_name,
+            :dictado_original,
+            :transcripcion,
+            :clinical_json,
+            :informe_ia,
+            :informe_corregido,
+            :diferencias_detectadas,
+            :modelo_usado,
+            :metadata_json,
+            :source
+        )
+    """)
+
+    db.execute(sql, {
+        "usuario": usuario,
+        "template_name": template_name,
+        "dictado_original": dictado_original,
+        "transcripcion": transcripcion,
+        "clinical_json": _iad_training_v2_json_dumps(clinical_json),
+        "informe_ia": informe_ia,
+        "informe_corregido": informe_corregido,
+        "diferencias_detectadas": diferencias_detectadas,
+        "modelo_usado": modelo_usado,
+        "metadata_json": _iad_training_v2_json_dumps(metadata),
+        "source": source,
+    })
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "message": "Corrección guardada para Training IA",
+        "template_name": template_name,
+        "diff_lines": len(diferencias_detectadas.splitlines()) if diferencias_detectadas else 0
+    }
+
+
+@router.get("/iad/api/training/corrections/list.json")
+def iad_training_corrections_list_v2(limit: int = 50, db = Depends(get_db)):
+    from sqlalchemy import text
+
+    _iad_training_v2_ensure_table(db)
+
+    limit = max(1, min(int(limit or 50), 200))
+
+    rows = db.execute(text("""
+        SELECT
+            id,
+            created_at,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_corregido,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source
+        FROM iad_training_corrections
+        ORDER BY id DESC
+        LIMIT :limit
+    """), {"limit": limit}).fetchall()
+
+    items = []
+    for r in rows:
+        items.append({
+            "id": r[0],
+            "created_at": str(r[1]),
+            "usuario": r[2],
+            "template_name": r[3],
+            "dictado_original": r[4],
+            "transcripcion": r[5],
+            "clinical_json": r[6],
+            "informe_ia": r[7],
+            "informe_corregido": r[8],
+            "diferencias_detectadas": r[9],
+            "modelo_usado": r[10],
+            "metadata_json": r[11],
+            "source": r[12],
+        })
+
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@router.get("/iad/api/training/corrections/export.jsonl")
+def iad_training_corrections_export_v2(db = Depends(get_db)):
+    from sqlalchemy import text
+    from fastapi.responses import Response
+    import json
+
+    _iad_training_v2_ensure_table(db)
+
+    rows = db.execute(text("""
+        SELECT
+            id,
+            created_at,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_corregido,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source
+        FROM iad_training_corrections
+        ORDER BY id ASC
+    """)).fetchall()
+
+    lines = []
+    for r in rows:
+        obj = {
+            "id": r[0],
+            "created_at": str(r[1]),
+            "usuario": r[2],
+            "template_name": r[3],
+            "dictado_original": r[4],
+            "transcripcion": r[5],
+            "clinical_json": r[6],
+            "informe_ia": r[7],
+            "informe_corregido": r[8],
+            "diferencias_detectadas": r[9],
+            "modelo_usado": r[10],
+            "metadata_json": r[11],
+            "source": r[12],
+        }
+        lines.append(json.dumps(obj, ensure_ascii=False, default=str))
+
+    body = "\n".join(lines) + ("\n" if lines else "")
+
+    return Response(
+        content=body,
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": "attachment; filename=iad_training_corrections.jsonl"}
+    )
+
+
+# IAD_VALIDATION_SAVE_HISTORY_TRAINING_V3
+# Restaura circuito operacional:
+# Guardar validación -> historial + Training IA.
+
+def _iad_validation_v3_username(request):
+    try:
+        sess = getattr(request, "session", None)
+        if isinstance(sess, dict):
+            return (
+                sess.get("username")
+                or sess.get("user")
+                or sess.get("usuario")
+                or sess.get("email")
+                or "unknown"
+            )
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _iad_validation_v3_json_dumps(value):
+    import json
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        return str(value)
+
+
+def _iad_validation_v3_dialect(db):
+    try:
+        return db.bind.dialect.name
+    except Exception:
+        try:
+            return db.get_bind().dialect.name
+        except Exception:
+            return "unknown"
+
+
+def _iad_validation_v3_ensure_tables(db):
+    from sqlalchemy import text
+
+    dialect = _iad_validation_v3_dialect(db)
+
+    if dialect == "postgresql":
+        training_ddl = """
+        CREATE TABLE IF NOT EXISTS iad_training_corrections (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            usuario TEXT,
+            template_name TEXT,
+            dictado_original TEXT,
+            transcripcion TEXT,
+            clinical_json TEXT,
+            informe_ia TEXT,
+            informe_corregido TEXT,
+            diferencias_detectadas TEXT,
+            modelo_usado TEXT,
+            metadata_json TEXT,
+            source TEXT
+        )
+        """
+
+        validation_ddl = """
+        CREATE TABLE IF NOT EXISTS iad_validation_history (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            usuario TEXT,
+            template_name TEXT,
+            dictado_original TEXT,
+            transcripcion TEXT,
+            clinical_json TEXT,
+            informe_ia TEXT,
+            informe_validado TEXT,
+            diferencias_detectadas TEXT,
+            modelo_usado TEXT,
+            metadata_json TEXT,
+            source TEXT,
+            estado TEXT
+        )
+        """
+    else:
+        training_ddl = """
+        CREATE TABLE IF NOT EXISTS iad_training_corrections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            usuario TEXT,
+            template_name TEXT,
+            dictado_original TEXT,
+            transcripcion TEXT,
+            clinical_json TEXT,
+            informe_ia TEXT,
+            informe_corregido TEXT,
+            diferencias_detectadas TEXT,
+            modelo_usado TEXT,
+            metadata_json TEXT,
+            source TEXT
+        )
+        """
+
+        validation_ddl = """
+        CREATE TABLE IF NOT EXISTS iad_validation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            usuario TEXT,
+            template_name TEXT,
+            dictado_original TEXT,
+            transcripcion TEXT,
+            clinical_json TEXT,
+            informe_ia TEXT,
+            informe_validado TEXT,
+            diferencias_detectadas TEXT,
+            modelo_usado TEXT,
+            metadata_json TEXT,
+            source TEXT,
+            estado TEXT
+        )
+        """
+
+    db.execute(text(training_ddl))
+    db.execute(text(validation_ddl))
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+
+def _iad_validation_v3_diff(informe_ia, informe_validado):
+    import difflib
+
+    a = (informe_ia or "").splitlines()
+    b = (informe_validado or "").splitlines()
+
+    diff = difflib.unified_diff(
+        a,
+        b,
+        fromfile="informe_ia",
+        tofile="informe_validado",
+        lineterm=""
+    )
+
+    return "\n".join(list(diff)[:700])
+
+
+@router.post("/iad/api/validacion/guardar.json")
+async def iad_validacion_guardar_v3(request: Request, db = Depends(get_db)):
+    from sqlalchemy import text
+
+    _iad_validation_v3_ensure_tables(db)
+
+    payload = await request.json()
+
+    usuario = _iad_validation_v3_username(request)
+    template_name = payload.get("template_name") or payload.get("plantilla_nombre") or ""
+    dictado_original = payload.get("dictado_original") or payload.get("source_text") or ""
+    transcripcion = payload.get("transcripcion") or payload.get("transcription") or ""
+    clinical_json = payload.get("clinical_json") or payload.get("hallazgos_estructurados") or {}
+    informe_ia = payload.get("informe_ia") or payload.get("model_report") or ""
+    informe_validado = (
+        payload.get("informe_validado")
+        or payload.get("informe_corregido")
+        or payload.get("corrected_report")
+        or payload.get("final_report")
+        or ""
+    )
+    modelo_usado = payload.get("modelo_usado") or payload.get("model") or ""
+    source = payload.get("source") or "work_v2_guardar_validacion_v3"
+    estado = payload.get("estado") or "validado"
+
+    if not str(informe_validado or "").strip():
+        return {"ok": False, "error": "informe_validado vacío"}
+
+    diferencias_detectadas = _iad_validation_v3_diff(informe_ia, informe_validado)
+
+    metadata = dict(payload)
+    for k in ["informe_validado", "informe_corregido", "corrected_report", "final_report"]:
+        metadata.pop(k, None)
+
+    # 1) Guardar en Training IA.
+    db.execute(text("""
+        INSERT INTO iad_training_corrections (
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_corregido,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source
+        )
+        VALUES (
+            :usuario,
+            :template_name,
+            :dictado_original,
+            :transcripcion,
+            :clinical_json,
+            :informe_ia,
+            :informe_corregido,
+            :diferencias_detectadas,
+            :modelo_usado,
+            :metadata_json,
+            :source
+        )
+    """), {
+        "usuario": usuario,
+        "template_name": template_name,
+        "dictado_original": dictado_original,
+        "transcripcion": transcripcion,
+        "clinical_json": _iad_validation_v3_json_dumps(clinical_json),
+        "informe_ia": informe_ia,
+        "informe_corregido": informe_validado,
+        "diferencias_detectadas": diferencias_detectadas,
+        "modelo_usado": modelo_usado,
+        "metadata_json": _iad_validation_v3_json_dumps(metadata),
+        "source": source,
+    })
+
+    # 2) Guardar en historial de validaciones.
+    db.execute(text("""
+        INSERT INTO iad_validation_history (
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_validado,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source,
+            estado
+        )
+        VALUES (
+            :usuario,
+            :template_name,
+            :dictado_original,
+            :transcripcion,
+            :clinical_json,
+            :informe_ia,
+            :informe_validado,
+            :diferencias_detectadas,
+            :modelo_usado,
+            :metadata_json,
+            :source,
+            :estado
+        )
+    """), {
+        "usuario": usuario,
+        "template_name": template_name,
+        "dictado_original": dictado_original,
+        "transcripcion": transcripcion,
+        "clinical_json": _iad_validation_v3_json_dumps(clinical_json),
+        "informe_ia": informe_ia,
+        "informe_validado": informe_validado,
+        "diferencias_detectadas": diferencias_detectadas,
+        "modelo_usado": modelo_usado,
+        "metadata_json": _iad_validation_v3_json_dumps(metadata),
+        "source": source,
+        "estado": estado,
+    })
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "message": "Validación guardada en historial y Training IA",
+        "saved_training": True,
+        "saved_history": True,
+        "template_name": template_name,
+        "estado": estado,
+        "diff_lines": len(diferencias_detectadas.splitlines()) if diferencias_detectadas else 0
+    }
+
+
+@router.get("/iad/api/validacion/historial.json")
+def iad_validacion_historial_v3(limit: int = 50, db = Depends(get_db)):
+    from sqlalchemy import text
+
+    _iad_validation_v3_ensure_tables(db)
+
+    limit = max(1, min(int(limit or 50), 200))
+
+    rows = db.execute(text("""
+        SELECT
+            id,
+            created_at,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_validado,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source,
+            estado
+        FROM iad_validation_history
+        ORDER BY id DESC
+        LIMIT :limit
+    """), {"limit": limit}).fetchall()
+
+    items = []
+    for r in rows:
+        items.append({
+            "id": r[0],
+            "created_at": str(r[1]),
+            "usuario": r[2],
+            "template_name": r[3],
+            "dictado_original": r[4],
+            "transcripcion": r[5],
+            "clinical_json": r[6],
+            "informe_ia": r[7],
+            "informe_validado": r[8],
+            "diferencias_detectadas": r[9],
+            "modelo_usado": r[10],
+            "metadata_json": r[11],
+            "source": r[12],
+            "estado": r[13],
+        })
+
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@router.get("/iad/api/validacion/historial/export.jsonl")
+def iad_validacion_historial_export_v3(db = Depends(get_db)):
+    from sqlalchemy import text
+    from fastapi.responses import Response
+    import json
+
+    _iad_validation_v3_ensure_tables(db)
+
+    rows = db.execute(text("""
+        SELECT
+            id,
+            created_at,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_validado,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source,
+            estado
+        FROM iad_validation_history
+        ORDER BY id ASC
+    """)).fetchall()
+
+    lines = []
+    for r in rows:
+        obj = {
+            "id": r[0],
+            "created_at": str(r[1]),
+            "usuario": r[2],
+            "template_name": r[3],
+            "dictado_original": r[4],
+            "transcripcion": r[5],
+            "clinical_json": r[6],
+            "informe_ia": r[7],
+            "informe_validado": r[8],
+            "diferencias_detectadas": r[9],
+            "modelo_usado": r[10],
+            "metadata_json": r[11],
+            "source": r[12],
+            "estado": r[13],
+        }
+        lines.append(json.dumps(obj, ensure_ascii=False, default=str))
+
+    body = "\n".join(lines) + ("\n" if lines else "")
+
+    return Response(
+        content=body,
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": "attachment; filename=iad_validation_history.jsonl"}
+    )
+
+
+# IAD_VALIDATION_OT_SYNC_V4
+# Integra validaciones nuevas con OT antigua.
+# - Agrega columna ot_id si falta en tablas nuevas.
+# - Guarda validación vinculada a OT.
+# - Expone último informe validado por OT para rellenar /iad/ot/{id}.
+# - Actualiza WorkOrder de forma defensiva si existen campos compatibles.
+
+def _iad_v4_json_dumps(value):
+    import json
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        return str(value)
+
+
+def _iad_v4_username(request):
+    try:
+        sess = getattr(request, "session", None)
+        if isinstance(sess, dict):
+            return sess.get("username") or sess.get("user") or sess.get("usuario") or sess.get("email") or "unknown"
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _iad_v4_diff(a, b):
+    import difflib
+    a = (a or "").splitlines()
+    b = (b or "").splitlines()
+    return "\n".join(list(difflib.unified_diff(a, b, fromfile="informe_ia", tofile="informe_validado", lineterm=""))[:700])
+
+
+def _iad_v4_table_columns(db, table_name):
+    from sqlalchemy import text
+
+    try:
+        dialect = db.bind.dialect.name
+    except Exception:
+        dialect = "unknown"
+
+    cols = []
+
+    try:
+        if dialect == "postgresql":
+            rows = db.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = :t
+                ORDER BY ordinal_position
+            """), {"t": table_name}).fetchall()
+            cols = [r[0] for r in rows]
+        else:
+            rows = db.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+            cols = [r[1] for r in rows]
+    except Exception:
+        cols = []
+
+    return cols
+
+
+def _iad_v4_ensure_tables_and_ot_id(db):
+    from sqlalchemy import text
+
+    # Asegurar tablas base si existe la función V3.
+    try:
+        _iad_validation_v3_ensure_tables(db)
+    except Exception:
+        # Fallback mínimo SQLite/Postgres.
+        try:
+            dialect = db.bind.dialect.name
+        except Exception:
+            dialect = "unknown"
+
+        pk = "SERIAL PRIMARY KEY" if dialect == "postgresql" else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+        db.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS iad_training_corrections (
+                id {pk},
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                usuario TEXT,
+                template_name TEXT,
+                dictado_original TEXT,
+                transcripcion TEXT,
+                clinical_json TEXT,
+                informe_ia TEXT,
+                informe_corregido TEXT,
+                diferencias_detectadas TEXT,
+                modelo_usado TEXT,
+                metadata_json TEXT,
+                source TEXT
+            )
+        """))
+
+        db.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS iad_validation_history (
+                id {pk},
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                usuario TEXT,
+                template_name TEXT,
+                dictado_original TEXT,
+                transcripcion TEXT,
+                clinical_json TEXT,
+                informe_ia TEXT,
+                informe_validado TEXT,
+                diferencias_detectadas TEXT,
+                modelo_usado TEXT,
+                metadata_json TEXT,
+                source TEXT,
+                estado TEXT
+            )
+        """))
+
+    for table in ["iad_training_corrections", "iad_validation_history"]:
+        cols = _iad_v4_table_columns(db, table)
+        if "ot_id" not in cols:
+            try:
+                db.execute(text(f"ALTER TABLE {table} ADD COLUMN ot_id INTEGER"))
+            except Exception:
+                pass
+
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+
+def _iad_v4_int_or_none(value):
+    try:
+        if value in (None, "", "null", "undefined"):
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _iad_v4_update_workorder_if_possible(db, ot_id, informe_validado, informe_ia="", metadata=None):
+    if not ot_id or not str(informe_validado or "").strip():
+        return {"updated": False, "reason": "sin ot_id o informe"}
+
+    try:
+        ot = db.query(WorkOrder).filter(WorkOrder.id == int(ot_id)).first()
+    except Exception as e:
+        return {"updated": False, "reason": "no query WorkOrder", "error": str(e)}
+
+    if not ot:
+        return {"updated": False, "reason": "OT no encontrada"}
+
+    mapper_cols = set()
+    try:
+        mapper_cols = {c.key for c in WorkOrder.__mapper__.columns}
+    except Exception:
+        mapper_cols = set()
+
+    updated_fields = []
+
+    # Campos candidatos para resultado/informe final.
+    result_candidates = [
+        "resultado",
+        "resultado_final",
+        "informe_final",
+        "final_report",
+        "report",
+        "output_text",
+        "resultado_revisado",
+        "texto_resultado",
+    ]
+
+    # Campos candidatos para revisión.
+    review_candidates = [
+        "revision",
+        "revisión",
+        "revision_text",
+        "texto_revision",
+        "review",
+        "review_text",
+    ]
+
+    for name in result_candidates:
+        if name in mapper_cols and hasattr(ot, name):
+            try:
+                setattr(ot, name, informe_validado)
+                updated_fields.append(name)
+            except Exception:
+                pass
+
+    # Si hay revisión separada, guardar diff o IA original.
+    review_text = ""
+    if informe_ia and informe_ia != informe_validado:
+        review_text = _iad_v4_diff(informe_ia, informe_validado)
+    elif metadata:
+        review_text = _iad_v4_json_dumps(metadata)
+
+    if review_text:
+        for name in review_candidates:
+            if name in mapper_cols and hasattr(ot, name):
+                try:
+                    setattr(ot, name, review_text)
+                    updated_fields.append(name)
+                except Exception:
+                    pass
+
+    # Estado.
+    for name in ["estado", "status", "state"]:
+        if name in mapper_cols and hasattr(ot, name):
+            try:
+                setattr(ot, name, "validada")
+                updated_fields.append(name)
+                break
+            except Exception:
+                pass
+
+    # Timestamps posibles.
+    import datetime
+    now = datetime.datetime.utcnow()
+
+    for name in ["updated_at", "actualizado_en", "validated_at", "validado_en"]:
+        if name in mapper_cols and hasattr(ot, name):
+            try:
+                setattr(ot, name, now)
+                updated_fields.append(name)
+            except Exception:
+                pass
+
+    try:
+        db.add(ot)
+        db.commit()
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"updated": False, "reason": "commit falló", "error": str(e), "fields": updated_fields}
+
+    return {
+        "updated": bool(updated_fields),
+        "fields": updated_fields,
+        "mapper_cols": sorted(list(mapper_cols)),
+    }
+
+
+def _iad_v4_insert_validation_and_training(db, request, payload):
+    from sqlalchemy import text
+
+    _iad_v4_ensure_tables_and_ot_id(db)
+
+    usuario = _iad_v4_username(request)
+    ot_id = _iad_v4_int_or_none(payload.get("ot_id") or payload.get("work_order_id") or payload.get("orden_id"))
+
+    template_name = payload.get("template_name") or payload.get("plantilla_nombre") or ""
+    dictado_original = payload.get("dictado_original") or payload.get("source_text") or ""
+    transcripcion = payload.get("transcripcion") or payload.get("transcription") or ""
+    clinical_json = payload.get("clinical_json") or payload.get("hallazgos_estructurados") or {}
+    informe_ia = payload.get("informe_ia") or payload.get("model_report") or ""
+    informe_validado = (
+        payload.get("informe_validado")
+        or payload.get("informe_corregido")
+        or payload.get("corrected_report")
+        or payload.get("final_report")
+        or ""
+    )
+    modelo_usado = payload.get("modelo_usado") or payload.get("model") or ""
+    source = payload.get("source") or "work_v2_guardar_validacion_v4"
+    estado = payload.get("estado") or "validado"
+
+    if not str(informe_validado or "").strip():
+        return {"ok": False, "error": "informe_validado vacío"}
+
+    diff = _iad_v4_diff(informe_ia, informe_validado)
+
+    metadata = dict(payload)
+    for k in ["informe_validado", "informe_corregido", "corrected_report", "final_report"]:
+        metadata.pop(k, None)
+
+    # INSERT dinámico compatible con tablas que acaban de recibir ot_id.
+    db.execute(text("""
+        INSERT INTO iad_training_corrections (
+            ot_id,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_corregido,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source
+        )
+        VALUES (
+            :ot_id,
+            :usuario,
+            :template_name,
+            :dictado_original,
+            :transcripcion,
+            :clinical_json,
+            :informe_ia,
+            :informe_corregido,
+            :diferencias_detectadas,
+            :modelo_usado,
+            :metadata_json,
+            :source
+        )
+    """), {
+        "ot_id": ot_id,
+        "usuario": usuario,
+        "template_name": template_name,
+        "dictado_original": dictado_original,
+        "transcripcion": transcripcion,
+        "clinical_json": _iad_v4_json_dumps(clinical_json),
+        "informe_ia": informe_ia,
+        "informe_corregido": informe_validado,
+        "diferencias_detectadas": diff,
+        "modelo_usado": modelo_usado,
+        "metadata_json": _iad_v4_json_dumps(metadata),
+        "source": source,
+    })
+
+    db.execute(text("""
+        INSERT INTO iad_validation_history (
+            ot_id,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_validado,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source,
+            estado
+        )
+        VALUES (
+            :ot_id,
+            :usuario,
+            :template_name,
+            :dictado_original,
+            :transcripcion,
+            :clinical_json,
+            :informe_ia,
+            :informe_validado,
+            :diferencias_detectadas,
+            :modelo_usado,
+            :metadata_json,
+            :source,
+            :estado
+        )
+    """), {
+        "ot_id": ot_id,
+        "usuario": usuario,
+        "template_name": template_name,
+        "dictado_original": dictado_original,
+        "transcripcion": transcripcion,
+        "clinical_json": _iad_v4_json_dumps(clinical_json),
+        "informe_ia": informe_ia,
+        "informe_validado": informe_validado,
+        "diferencias_detectadas": diff,
+        "modelo_usado": modelo_usado,
+        "metadata_json": _iad_v4_json_dumps(metadata),
+        "source": source,
+        "estado": estado,
+    })
+
+    db.commit()
+
+    ot_sync = _iad_v4_update_workorder_if_possible(
+        db,
+        ot_id,
+        informe_validado,
+        informe_ia=informe_ia,
+        metadata=metadata,
+    )
+
+    return {
+        "ok": True,
+        "message": "Validación guardada en historial, Training IA y OT si corresponde",
+        "saved_training": True,
+        "saved_history": True,
+        "ot_id": ot_id,
+        "ot_sync": ot_sync,
+        "template_name": template_name,
+        "estado": estado,
+        "diff_lines": len(diff.splitlines()) if diff else 0,
+    }
+
+
+@router.post("/iad/api/validacion/guardar-v4.json")
+async def iad_validacion_guardar_v4(request: Request, db = Depends(get_db)):
+    payload = await request.json()
+    return _iad_v4_insert_validation_and_training(db, request, payload)
+
+
+@router.get("/iad/api/validacion/ot/{ot_id}/latest.json")
+def iad_validacion_ot_latest_v4(ot_id: int, db = Depends(get_db)):
+    from sqlalchemy import text
+
+    _iad_v4_ensure_tables_and_ot_id(db)
+
+    rows = db.execute(text("""
+        SELECT
+            id,
+            created_at,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_validado,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source,
+            estado,
+            ot_id
+        FROM iad_validation_history
+        WHERE ot_id = :ot_id
+        ORDER BY id DESC
+        LIMIT 1
+    """), {"ot_id": ot_id}).fetchall()
+
+    if not rows:
+        return {"ok": True, "found": False, "ot_id": ot_id}
+
+    r = rows[0]
+    return {
+        "ok": True,
+        "found": True,
+        "item": {
+            "id": r[0],
+            "created_at": str(r[1]),
+            "usuario": r[2],
+            "template_name": r[3],
+            "dictado_original": r[4],
+            "transcripcion": r[5],
+            "clinical_json": r[6],
+            "informe_ia": r[7],
+            "informe_validado": r[8],
+            "diferencias_detectadas": r[9],
+            "modelo_usado": r[10],
+            "metadata_json": r[11],
+            "source": r[12],
+            "estado": r[13],
+            "ot_id": r[14],
+        },
+    }
+
+
+@router.get("/iad/api/validacion/historial-v4.json")
+def iad_validacion_historial_v4(limit: int = 50, db = Depends(get_db)):
+    from sqlalchemy import text
+
+    _iad_v4_ensure_tables_and_ot_id(db)
+
+    limit = max(1, min(int(limit or 50), 200))
+
+    rows = db.execute(text("""
+        SELECT
+            id,
+            created_at,
+            usuario,
+            template_name,
+            informe_validado,
+            modelo_usado,
+            source,
+            estado,
+            ot_id
+        FROM iad_validation_history
+        ORDER BY id DESC
+        LIMIT :limit
+    """), {"limit": limit}).fetchall()
+
+    items = []
+    for r in rows:
+        items.append({
+            "id": r[0],
+            "created_at": str(r[1]),
+            "usuario": r[2],
+            "template_name": r[3],
+            "informe_validado": r[4],
+            "modelo_usado": r[5],
+            "source": r[6],
+            "estado": r[7],
+            "ot_id": r[8],
+        })
+
+    return {"ok": True, "count": len(items), "items": items}
+
+
+# IAD_VALIDATION_OT_SYNC_V5
+# Versión corregida: escribe campos reales de WorkOrder:
+# review_report, final_report_initial, final_report_accepted, final_report_diff, status, validated_at.
+
+def _iad_v5_json_dumps(value):
+    import json
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        return str(value)
+
+
+def _iad_v5_username(request):
+    try:
+        sess = getattr(request, "session", None)
+        if isinstance(sess, dict):
+            return sess.get("username") or sess.get("user") or sess.get("usuario") or sess.get("email") or "unknown"
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _iad_v5_int(value):
+    try:
+        if value in (None, "", "null", "undefined"):
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _iad_v5_diff(a, b):
+    import difflib
+    a = (a or "").splitlines()
+    b = (b or "").splitlines()
+    return "\n".join(list(difflib.unified_diff(a, b, fromfile="informe_ia", tofile="informe_validado", lineterm=""))[:700])
+
+
+def _iad_v5_ensure_tables(db):
+    from sqlalchemy import text
+
+    try:
+        _iad_v4_ensure_tables_and_ot_id(db)
+        return
+    except Exception:
+        pass
+
+    try:
+        dialect = db.bind.dialect.name
+    except Exception:
+        dialect = "unknown"
+
+    pk = "SERIAL PRIMARY KEY" if dialect == "postgresql" else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    db.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS iad_training_corrections (
+            id {pk},
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ot_id INTEGER,
+            usuario TEXT,
+            template_name TEXT,
+            dictado_original TEXT,
+            transcripcion TEXT,
+            clinical_json TEXT,
+            informe_ia TEXT,
+            informe_corregido TEXT,
+            diferencias_detectadas TEXT,
+            modelo_usado TEXT,
+            metadata_json TEXT,
+            source TEXT
+        )
+    """))
+
+    db.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS iad_validation_history (
+            id {pk},
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ot_id INTEGER,
+            usuario TEXT,
+            template_name TEXT,
+            dictado_original TEXT,
+            transcripcion TEXT,
+            clinical_json TEXT,
+            informe_ia TEXT,
+            informe_validado TEXT,
+            diferencias_detectadas TEXT,
+            modelo_usado TEXT,
+            metadata_json TEXT,
+            source TEXT,
+            estado TEXT
+        )
+    """))
+
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+
+def _iad_v5_update_workorder(db, ot_id, informe_validado, informe_ia, diff):
+    if not ot_id:
+        return {"updated": False, "reason": "sin ot_id"}
+
+    try:
+        ot = db.query(WorkOrder).filter(WorkOrder.id == int(ot_id)).first()
+    except Exception as e:
+        return {"updated": False, "reason": "query WorkOrder falló", "error": str(e)}
+
+    if not ot:
+        return {"updated": False, "reason": "OT no encontrada"}
+
+    import datetime
+    now = datetime.datetime.utcnow()
+    fields = []
+
+    try:
+        ot.final_report_accepted = informe_validado
+        fields.append("final_report_accepted")
+    except Exception:
+        pass
+
+    try:
+        if not getattr(ot, "final_report_initial", None):
+            ot.final_report_initial = informe_ia or informe_validado
+            fields.append("final_report_initial")
+    except Exception:
+        pass
+
+    try:
+        ot.final_report_diff = diff or ""
+        fields.append("final_report_diff")
+    except Exception:
+        pass
+
+    try:
+        ot.review_report = diff or ""
+        fields.append("review_report")
+    except Exception:
+        pass
+
+    try:
+        ot.status = "guardada"
+        fields.append("status")
+    except Exception:
+        pass
+
+    try:
+        ot.validated_at = now
+        fields.append("validated_at")
+    except Exception:
+        pass
+
+    try:
+        ot.updated_at = now
+        fields.append("updated_at")
+    except Exception:
+        pass
+
+    try:
+        db.add(ot)
+        db.commit()
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"updated": False, "reason": "commit WorkOrder falló", "error": str(e), "fields": fields}
+
+    return {"updated": True, "fields": fields, "ot_id": ot_id}
+
+
+def _iad_v5_insert_history_training(db, request, payload):
+    from sqlalchemy import text
+
+    _iad_v5_ensure_tables(db)
+
+    usuario = _iad_v5_username(request)
+    ot_id = _iad_v5_int(payload.get("ot_id") or payload.get("work_order_id") or payload.get("orden_id"))
+
+    template_name = payload.get("template_name") or payload.get("plantilla_nombre") or ""
+    dictado_original = payload.get("dictado_original") or payload.get("source_text") or ""
+    transcripcion = payload.get("transcripcion") or payload.get("transcription") or ""
+    clinical_json = payload.get("clinical_json") or payload.get("hallazgos_estructurados") or {}
+    informe_ia = payload.get("informe_ia") or payload.get("model_report") or ""
+    informe_validado = (
+        payload.get("informe_validado")
+        or payload.get("informe_corregido")
+        or payload.get("corrected_report")
+        or payload.get("final_report")
+        or ""
+    )
+    modelo_usado = payload.get("modelo_usado") or payload.get("model") or ""
+    source = payload.get("source") or "work_or_ot_guardar_validacion_v5"
+    estado = payload.get("estado") or "validado"
+
+    if not str(informe_validado or "").strip():
+        return {"ok": False, "error": "informe_validado vacío"}
+
+    diff = _iad_v5_diff(informe_ia, informe_validado)
+
+    metadata = dict(payload)
+    for k in ["informe_validado", "informe_corregido", "corrected_report", "final_report"]:
+        metadata.pop(k, None)
+
+    db.execute(text("""
+        INSERT INTO iad_training_corrections (
+            ot_id,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_corregido,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source
+        )
+        VALUES (
+            :ot_id,
+            :usuario,
+            :template_name,
+            :dictado_original,
+            :transcripcion,
+            :clinical_json,
+            :informe_ia,
+            :informe_corregido,
+            :diferencias_detectadas,
+            :modelo_usado,
+            :metadata_json,
+            :source
+        )
+    """), {
+        "ot_id": ot_id,
+        "usuario": usuario,
+        "template_name": template_name,
+        "dictado_original": dictado_original,
+        "transcripcion": transcripcion,
+        "clinical_json": _iad_v5_json_dumps(clinical_json),
+        "informe_ia": informe_ia,
+        "informe_corregido": informe_validado,
+        "diferencias_detectadas": diff,
+        "modelo_usado": modelo_usado,
+        "metadata_json": _iad_v5_json_dumps(metadata),
+        "source": source,
+    })
+
+    db.execute(text("""
+        INSERT INTO iad_validation_history (
+            ot_id,
+            usuario,
+            template_name,
+            dictado_original,
+            transcripcion,
+            clinical_json,
+            informe_ia,
+            informe_validado,
+            diferencias_detectadas,
+            modelo_usado,
+            metadata_json,
+            source,
+            estado
+        )
+        VALUES (
+            :ot_id,
+            :usuario,
+            :template_name,
+            :dictado_original,
+            :transcripcion,
+            :clinical_json,
+            :informe_ia,
+            :informe_validado,
+            :diferencias_detectadas,
+            :modelo_usado,
+            :metadata_json,
+            :source,
+            :estado
+        )
+    """), {
+        "ot_id": ot_id,
+        "usuario": usuario,
+        "template_name": template_name,
+        "dictado_original": dictado_original,
+        "transcripcion": transcripcion,
+        "clinical_json": _iad_v5_json_dumps(clinical_json),
+        "informe_ia": informe_ia,
+        "informe_validado": informe_validado,
+        "diferencias_detectadas": diff,
+        "modelo_usado": modelo_usado,
+        "metadata_json": _iad_v5_json_dumps(metadata),
+        "source": source,
+        "estado": estado,
+    })
+
+    db.commit()
+
+    ot_sync = _iad_v5_update_workorder(db, ot_id, informe_validado, informe_ia, diff)
+
+    return {
+        "ok": True,
+        "message": "Validación guardada",
+        "saved_training": True,
+        "saved_history": True,
+        "saved_workorder": bool(ot_sync.get("updated")),
+        "ot_id": ot_id,
+        "ot_sync": ot_sync,
+        "template_name": template_name,
+        "estado": estado,
+        "diff_lines": len(diff.splitlines()) if diff else 0,
+    }
+
+
+@router.post("/iad/api/validacion/guardar-v5.json")
+async def iad_validacion_guardar_v5(request: Request, db = Depends(get_db)):
+    payload = await request.json()
+    return _iad_v5_insert_history_training(db, request, payload)
+
+
+@router.get("/iad/api/validacion/ot/{ot_id}/latest-v5.json")
+def iad_validacion_ot_latest_v5(ot_id: int, db = Depends(get_db)):
+    from sqlalchemy import text
+
+    _iad_v5_ensure_tables(db)
+
+    row = db.execute(text("""
+        SELECT
+            id,
+            created_at,
+            usuario,
+            template_name,
+            informe_ia,
+            informe_validado,
+            diferencias_detectadas,
+            modelo_usado,
+            source,
+            estado,
+            ot_id
+        FROM iad_validation_history
+        WHERE ot_id = :ot_id
+        ORDER BY id DESC
+        LIMIT 1
+    """), {"ot_id": ot_id}).fetchone()
+
+    if not row:
+        # Fallback: leer WorkOrder directo.
+        try:
+            ot = db.query(WorkOrder).filter(WorkOrder.id == int(ot_id)).first()
+            if ot and (ot.final_report_accepted or ot.review_report):
+                return {
+                    "ok": True,
+                    "found": True,
+                    "source": "workorder",
+                    "item": {
+                        "ot_id": ot_id,
+                        "informe_ia": ot.final_report_initial or "",
+                        "informe_validado": ot.final_report_accepted or "",
+                        "diferencias_detectadas": ot.final_report_diff or ot.review_report or "",
+                        "template_name": "",
+                        "estado": getattr(ot, "status", "") or "",
+                    },
+                }
+        except Exception:
+            pass
+
+        return {"ok": True, "found": False, "ot_id": ot_id}
+
+    return {
+        "ok": True,
+        "found": True,
+        "source": "validation_history",
+        "item": {
+            "id": row[0],
+            "created_at": str(row[1]),
+            "usuario": row[2],
+            "template_name": row[3],
+            "informe_ia": row[4],
+            "informe_validado": row[5],
+            "diferencias_detectadas": row[6],
+            "modelo_usado": row[7],
+            "source": row[8],
+            "estado": row[9],
+            "ot_id": row[10],
+        },
+    }
 

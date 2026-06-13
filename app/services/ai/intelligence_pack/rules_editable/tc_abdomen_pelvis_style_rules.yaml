@@ -1,0 +1,37 @@
+version: 1
+name: TC Abdomen y Pelvis CC - reglas de estilo e impresión
+scope:
+  template_names:
+    - TC Abdomen y pelvis CC
+    - TC Abdomen y Pelvis CC
+    - TC abdomen pelvis CC
+    - TC abdomen y pelvis con contraste
+
+style_rules:
+  impression:
+    use_bullets: false
+    include_measurements: false
+    conceptual_only: true
+    do_not_conclude_normal_presence_or_absence: true
+
+  body:
+    preserve_template_normal_phrases: true
+    gallbladder_default_present: "Vesícula biliar en repleción parcial, de paredes delgadas."
+    uterus_default_not_seen: "Útero no visualizado. No se observan masas anexiales."
+    seminal_vesicles_default: "Vesículas seminales simétricas."
+    no_free_fluid_default: "No se observa líquido libre significativo."
+
+conceptual_impression_map:
+  hepatic_cyst: "Pequeña lesión quística hepática en el lóbulo izquierdo."
+  renal_simple_cyst_left: "Quiste renal simple izquierdo."
+  renal_simple_cyst_right: "Quiste renal simple derecho."
+  sigmoid_postoperative_changes: "Cambios postquirúrgicos en el sigmoides y FII."
+  uncomplicated_colonic_diverticulosis: "Diverticulosis colónica sin signos de complicación."
+  prostatomegaly: "Aumento del tamaño glandular prostático."
+
+negative_rules:
+  - "No agregar vesícula biliar a la impresión si solo está presente o normal."
+  - "No agregar útero a la impresión si solo está presente, ausente o no visualizado."
+  - "No agregar vejiga a la impresión si solo está parcialmente replecionada sin lesión."
+  - "No agregar líquido libre a la impresión si solo se informa ausencia."
+  - "No agregar medidas en la impresión diagnóstica."
