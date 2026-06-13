@@ -357,6 +357,99 @@ def template_score(raw_text: str, template: dict[str, Any]) -> int:
     return score
 
 
+
+# IAD_EXPLICIT_TEMPLATE_OVERRIDE_V1
+def _explicit_template_override(text: str, templates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """
+    Si el dictado dice explícitamente la plantilla a usar, eso debe pesar más
+    que la heurística general.
+    Ejemplo: "la plantilla a utilizar es abdomen y pelvis".
+    """
+    t = noacc(text)
+
+    wants_abd_pelvis = (
+        ("plantilla" in t and "abdomen" in t and "pelvis" in t)
+        or "abdomen y pelvis" in t
+        or "abdominopelv" in t
+    )
+
+    if not wants_abd_pelvis:
+        return None
+
+    wants_sc = any(x in t for x in [
+        "sin contraste",
+        "no contrastado",
+        "sin contraste endovenoso",
+        " sc",
+    ])
+
+    wants_cc = any(x in t for x in [
+        "con contraste",
+        "contrastado",
+        "contraste endovenoso",
+        " cc",
+    ]) and not wants_sc
+
+    ranked = []
+
+    for tpl in templates:
+        blob = noacc(
+            " ".join([
+                s(tpl.get("nombre")),
+                s(tpl.get("titulo")),
+                s(tpl.get("tipo")),
+                s(tpl.get("modalidad")),
+                s(tpl.get("tags")),
+                s(tpl.get("contenido")),
+            ])
+        )
+
+        score = 0
+
+        if "abdomen" in blob:
+            score += 100
+        if "pelvis" in blob:
+            score += 100
+        if "torax" in blob or "torac" in blob:
+            score -= 80
+
+        if wants_cc:
+            if " con contraste" in blob or "contrastado" in blob or " cc" in blob or blob.endswith("cc"):
+                score += 120
+            if "sin contraste" in blob or " sc" in blob or blob.endswith("sc"):
+                score -= 120
+
+        if wants_sc:
+            if "sin contraste" in blob or " sc" in blob or blob.endswith("sc"):
+                score += 120
+            if "con contraste" in blob or "contrastado" in blob or " cc" in blob or blob.endswith("cc"):
+                score -= 120
+
+        if score > 0:
+            ranked.append((score, tpl))
+
+    if not ranked:
+        return None
+
+    ranked.sort(key=lambda x: x[0], reverse=True)
+    score, tpl = ranked[0]
+
+    if score < 120:
+        return None
+
+    return {
+        "id": tpl.get("id"),
+        "nombre": s(tpl.get("nombre")),
+        "confianza": "alta",
+        "motivo": f"Plantilla indicada explícitamente en el dictado. Puntaje override: {score}.",
+        "origen": tpl.get("origen", ""),
+        "contenido": tpl.get("contenido", ""),
+        "modalidad": tpl.get("modalidad", ""),
+        "tipo": tpl.get("tipo", ""),
+        "tags": tpl.get("tags", ""),
+    }
+
+
 def suggest_template(text: str, templates: list[dict[str, Any]]) -> dict[str, Any]:
     if not templates:
         return {
@@ -367,6 +460,10 @@ def suggest_template(text: str, templates: list[dict[str, Any]]) -> dict[str, An
             "origen": "",
             "contenido": "",
         }
+
+    explicit = _explicit_template_override(text, templates)
+    if explicit:
+        return explicit
 
     ranked = sorted(
         ((template_score(text, tpl), tpl) for tpl in templates),
@@ -809,6 +906,10 @@ def has_positive_findings(hallazgos: str) -> bool:
         "calculo",
         "calculos",
         "hidronefrosis",
+        "prostata aumentada",
+        "prostata de mayor tamano",
+        "aumento de tamano prostatico",
+        "hiperplasia prostatica",
         "derrame",
         "neumotorax",
         "condensacion",
@@ -822,6 +923,10 @@ def has_positive_findings(hallazgos: str) -> bool:
         "oclusion",
         "utero no visualizado",
         "vesicula no visualizada",
+        "prostata aumentada",
+        "prostata de mayor tamano",
+        "aumento de tamano prostatico",
+        "hiperplasia prostatica",
         "no se observa utero",
         "no se visualiza utero",
     ]
@@ -868,6 +973,15 @@ def build_heuristic_impression(hallazgos: str) -> str:
 
     if any(x in h for x in ["lesion hepatica", "lesion focal hepatica", "hepatic"]):
         impressions.append("Lesión hepática focal.")
+
+    if any(x in h for x in ["prostata aumentada", "prostata de mayor tamano", "aumento de tamano prostatico", "hiperplasia prostatica"]):
+        medida = ""
+        m = re.search(r"(\d+(?:[,.]\d+)?)\s*(mm|milimetros|milímetros|cm|centimetros|centímetros)", h_raw, flags=re.I)
+        if m:
+            unit = m.group(2)
+            unit = "mm" if "mil" in unit.lower() else unit
+            medida = f" de hasta {m.group(1)} {unit}"
+        impressions.append(f"Aumento de tamaño prostático{medida}.")
 
     if any(x in h for x in ["utero no visualizado", "no se observa utero", "no se visualiza utero"]):
         impressions.append("Útero no visualizado.")
@@ -1027,6 +1141,132 @@ INFORME INTEGRADO:
         return append_diagnostic_impression(report_without_normal, heuristic, use_heading=False)
 
 
+
+# IAD_FORCE_PROSTATE_FINDING_V1
+def force_key_findings_from_dictation(report: str, hallazgos: str) -> str:
+    """
+    Guardrail determinístico.
+    Evita que un hallazgo dictado explícito quede contradicho por plantilla normal.
+    """
+    report = s(report)
+    hallazgos = s(hallazgos)
+    h = noacc(hallazgos)
+
+    if not report:
+        return report
+
+    if any(x in h for x in [
+        "prostata aumentada",
+        "prostata de mayor tamano",
+        "aumento de tamano prostatico",
+        "hiperplasia prostatica",
+    ]):
+        medida = ""
+        m = re.search(r"(\d+(?:[,.]\d+)?)\s*(mm|milimetros|milímetros|cm|centimetros|centímetros)", hallazgos, flags=re.I)
+        if m:
+            unit = m.group(2)
+            unit = "mm" if "mil" in unit.lower() else unit
+            medida = f", de hasta {m.group(1)} {unit}"
+
+        prostate_line = f"Próstata aumentada de tamaño{medida}."
+
+        lines = []
+        replaced = False
+
+        for line in report.splitlines():
+            n = noacc(line)
+            if "prostata" in n:
+                if any(x in n for x in [
+                    "estructura y tamano normal",
+                    "tamano normal",
+                    "dimensiones normales",
+                    "no aumentada",
+                ]):
+                    lines.append(prostate_line)
+                    replaced = True
+                    continue
+            lines.append(line)
+
+        out = "\n".join(lines)
+
+        if not replaced and "prostata" not in noacc(out):
+            out = out.rstrip() + "\n" + prostate_line
+
+        return out.strip()
+
+    return report
+
+
+
+# IAD_PROSTATE_SCOPED_MEASURE_V1
+def _iad_sentence_with_any(text: str, terms: list[str]) -> str:
+    raw = s(text)
+    parts = re.split(r"(?<=[.!?])\s+|\n+", raw)
+    for part in parts:
+        n = noacc(part)
+        if any(term in n for term in terms):
+            return part.strip()
+    return raw
+
+
+def _iad_measure_from_text(text: str) -> str:
+    raw = s(text)
+    m = re.search(r"(\d+(?:[,.]\d+)?)\s*(mm|milimetros|milímetros|cm|centimetros|centímetros)", raw, flags=re.I)
+    if not m:
+        return ""
+    unit = m.group(2)
+    unit = "mm" if "mil" in unit.lower() else unit
+    return f"{m.group(1)} {unit}"
+
+
+def force_prostate_scoped_measure(report: str, hallazgos: str) -> str:
+    """
+    Corrige próstata usando la frase que contiene 'próstata'.
+    Evita tomar por error medidas de adenopatías u otros hallazgos.
+    """
+    report = s(report)
+    hallazgos = s(hallazgos)
+    h = noacc(hallazgos)
+
+    if not any(x in h for x in [
+        "prostata aumentada",
+        "prostata de mayor tamano",
+        "prostata de mayor tamaño",
+        "aumento de tamano prostatico",
+        "aumento de tamaño prostático",
+        "diametro transverso",
+        "diámetro transverso",
+        "hiperplasia prostatica",
+    ]):
+        return report
+
+    prostate_sentence = _iad_sentence_with_any(hallazgos, ["prostata"])
+    medida = _iad_measure_from_text(prostate_sentence)
+
+    prostate_line = "Próstata aumentada de tamaño"
+    if medida:
+        prostate_line += f", de hasta {medida}"
+    prostate_line += "."
+
+    lines = []
+    replaced = False
+
+    for line in report.splitlines():
+        n = noacc(line)
+        if "prostata" in n:
+            lines.append(prostate_line)
+            replaced = True
+            continue
+        lines.append(line)
+
+    out = "\n".join(lines).strip()
+
+    if not replaced:
+        out = out.rstrip() + "\n" + prostate_line
+
+    return out.strip()
+
+
 def consistency_second_pass(report: str, hallazgos: str, api_key: str = "") -> str:
     """
     Segunda lectura de consistencia interna.
@@ -1035,6 +1275,8 @@ def consistency_second_pass(report: str, hallazgos: str, api_key: str = "") -> s
     - evitar impresión normal si hay hallazgos positivos.
     """
     checked = ensure_diagnostic_impression(report, hallazgos, api_key=api_key)
+    checked = force_key_findings_from_dictation(checked, hallazgos)
+    checked = force_prostate_scoped_measure(checked, hallazgos)
 
     # Limpieza menor de espacios.
     checked = re.sub(r"[ \t]+\n", "\n", checked)

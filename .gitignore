@@ -41,3 +41,16 @@ env/
 # IA Dictador - audio local
 
 .DS_Store
+# IA Dictador - archivos locales/no versionables
+*.bak
+*.bak_*
+*.tmp
+.ruff_cache/
+# Entornos / secretos
+*.key
+# Datos locales generados
+data/*.sqlite3
+data/*.db
+data/*.db-shm
+data/*.db-wal
+audio_uploads/

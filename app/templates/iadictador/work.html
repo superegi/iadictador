@@ -1231,7 +1231,7 @@ document.addEventListener("DOMContentLoaded", function () {
       var abody = new URLSearchParams();
       abody.set("texto_bruto", raw);
 
-      var aresp = await fetch("/iad/analizar-radiologia.json", {
+      var aresp = await fetch("/iad/analizar-radiologia-estructurada.json", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
@@ -1268,7 +1268,7 @@ document.addEventListener("DOMContentLoaded", function () {
       gbody.set("plantilla_id", plantillaId);
       gbody.set("hallazgos", hallazgos);
 
-      var gresp = await fetch("/iad/generar-informe-radiologico.json", {
+      var gresp = await fetch("/iad/generar-informe-radiologico-estructurado.json", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
@@ -1872,7 +1872,7 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 })();
 </script>
-<script src="/static/iadictador_radiology_flow.js?v=22"></script>
+<script src="/static/iadictador_radiology_flow.js?v=20260613003348"></script>
 
 
 <script>
@@ -2117,7 +2117,7 @@ document.addEventListener("DOMContentLoaded", function () {
       var abody = new URLSearchParams();
       abody.set("texto_bruto", raw);
 
-      var aresp = await fetch("/iad/analizar-radiologia.json", {
+      var aresp = await fetch("/iad/analizar-radiologia-estructurada.json", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
@@ -2155,7 +2155,7 @@ document.addEventListener("DOMContentLoaded", function () {
       gbody.set("plantilla_id", plantillaId);
       gbody.set("hallazgos", hallazgos);
 
-      var gresp = await fetch("/iad/generar-informe-radiologico.json", {
+      var gresp = await fetch("/iad/generar-informe-radiologico-estructurado.json", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
@@ -2307,5 +2307,630 @@ document.addEventListener("DOMContentLoaded", function () {
 
     console.log("[IAD] inline one-step runner activo");
   });
+})();
+</script>
+
+
+
+
+<script>
+(function () {
+  // IAD_WORK_INLINE_FETCH_WRAPPER_V6
+  console.log("[IAD V6] fetch wrapper activo");
+
+  function norm(value) {
+    return String(value || "").trim();
+  }
+
+  function esc(value) {
+    return String(value || "").replace(/[<>&"]/g, function (c) {
+      return {"<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;"}[c];
+    });
+  }
+
+  function audioCount() {
+    return document.querySelectorAll("audio").length;
+  }
+
+  function completeCount() {
+    const body = String(document.body.innerText || "");
+    const m = body.match(/Transcripción completa:\s*(\d+)\s*audio/i);
+    return m ? (parseInt(m[1], 10) || 0) : 0;
+  }
+
+  function findMainTextarea() {
+    const areas = Array.from(document.querySelectorAll("textarea")).filter(function (el) {
+      const id = String(el.id || "");
+      if (/iad-rad|resultado|revisado|primary|final|hallazgos/i.test(id)) return false;
+
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 100 || rect.height < 50) return false;
+
+      return true;
+    });
+
+    areas.sort(function (a, b) {
+      const av = norm(a.value).length;
+      const bv = norm(b.value).length;
+
+      const at = String((a.closest("section,div,main") || document.body).innerText || "").toLowerCase();
+      const bt = String((b.closest("section,div,main") || document.body).innerText || "").toLowerCase();
+
+      let as = av;
+      let bs = bv;
+
+      if (at.includes("información principal") || at.includes("informacion principal")) as += 100000;
+      if (bt.includes("información principal") || bt.includes("informacion principal")) bs += 100000;
+
+      return bs - as;
+    });
+
+    return areas[0] || null;
+  }
+
+  function fullSourceText() {
+    const textarea = findMainTextarea();
+    const raw = textarea ? norm(textarea.value) : "";
+    window.__iadLastDictatedText = raw;
+    return raw;
+  }
+
+  function keyTerms(raw) {
+    const t = String(raw || "").toLowerCase();
+
+    const terms = [
+      ["vesícula", /ves[ií]cula/],
+      ["ateromatosis", /ateromatosis/],
+      ["adenopatías", /adenopat/],
+      ["divertículos", /divert[ií]cul/],
+      ["próstata", /pr[oó]stata/],
+      ["60 mm", /\b60\s*(mm|mil[ií]metros)/],
+      ["abdomen y pelvis", /abdomen\s+y\s+pelvis/]
+    ];
+
+    return terms
+      .filter(function (x) { return x[1].test(t); })
+      .map(function (x) { return x[0]; });
+  }
+
+  function ensureAudit(raw) {
+    let box = document.getElementById("iad-v6-source-audit");
+
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "iad-v6-source-audit";
+      box.style.margin = "10px 0";
+      box.style.padding = "10px 12px";
+      box.style.borderRadius = "12px";
+      box.style.border = "1px solid #38bdf8";
+      box.style.background = "#082f49";
+      box.style.color = "#e0f2fe";
+      box.style.fontWeight = "800";
+
+      const primary = document.getElementById("iad-rad-one-primary-report");
+      const templateBox = document.getElementById("iad-rad-one-template-box");
+
+      if (templateBox && templateBox.parentNode) {
+        templateBox.parentNode.insertBefore(box, templateBox.nextSibling);
+      } else if (primary && primary.parentNode) {
+        primary.parentNode.insertBefore(box, primary);
+      } else {
+        document.body.appendChild(box);
+      }
+    }
+
+    const audioN = audioCount();
+    const completeN = completeCount();
+    const keys = keyTerms(raw);
+
+    box.innerHTML =
+      "Fuente usada por IA: audios detectados <strong>" + audioN + "</strong> · " +
+      "transcripción completa <strong>" + completeN + "</strong> · " +
+      "texto usado <strong>" + String(raw || "").length + "</strong> caracteres · " +
+      "claves: <strong>" + esc(keys.join(", ") || "sin claves") + "</strong>";
+  }
+
+  function hideLegacy() {
+    ["iad-rad-one-primary-report", "iad-rad-one-revised-report"].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+
+      el.style.display = "none";
+      el.setAttribute("aria-hidden", "true");
+
+      const prev = el.previousElementSibling;
+      if (prev) {
+        const label = String(prev.innerText || prev.textContent || "").toLowerCase();
+        if (label.includes("resultado primario") || label.includes("resultado revisado")) {
+          prev.style.display = "none";
+        }
+      }
+    });
+  }
+
+  function styles() {
+    if (document.getElementById("iad-v6-style")) return;
+
+    const style = document.createElement("style");
+    style.id = "iad-v6-style";
+    style.textContent = `
+      #iad-v6-inline-review {
+        margin: 12px 0 18px 0;
+        padding: 14px;
+        border-radius: 18px;
+        background: #e8eef8;
+        border: 1px solid #cbd5e1;
+        color: #172033;
+      }
+
+      #iad-v6-inline-review .iad-v6-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      #iad-v6-inline-review .iad-v6-title {
+        font-size: 22px;
+        font-weight: 900;
+        line-height: 1.1;
+      }
+
+      #iad-v6-inline-review .iad-v6-grid {
+        display: grid;
+        grid-template-columns: minmax(0,1.35fr) minmax(340px,.95fr);
+        gap: 14px;
+      }
+
+      #iad-v6-inline-review .iad-v6-left,
+      #iad-v6-inline-review .iad-v6-right {
+        background: #fff;
+        border: 1px solid #d1d5db;
+        border-radius: 16px;
+        padding: 14px;
+      }
+
+      #iad-v6-inline-review h3 {
+        margin: 0 0 10px 0;
+        font-weight: 900;
+        padding-bottom: 7px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      #iad-v6-inline-review .iad-v6-warning {
+        background: #fff7cc;
+        border: 1px solid #f59e0b;
+        border-radius: 12px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+      }
+
+      #iad-v6-inline-review .iad-v6-card {
+        border-left: 5px solid #64748b;
+        background: #f8fafc;
+        border-radius: 13px;
+        padding: 10px 12px;
+        margin: 10px 0;
+      }
+
+      #iad-v6-inline-review .iad-v6-card[data-tipo="agregado"] { border-left-color: #22c55e; background: #dcfce7; }
+      #iad-v6-inline-review .iad-v6-card[data-tipo="reemplazado"] { border-left-color: #2563eb; background: #dbeafe; }
+      #iad-v6-inline-review .iad-v6-card[data-tipo="conflicto"] { border-left-color: #ef4444; background: #fee2e2; }
+      #iad-v6-inline-review .iad-v6-card[data-tipo="eliminado"] { border-left-color: #9ca3af; background: #e5e7eb; }
+      #iad-v6-inline-review .iad-v6-card.rejected { opacity: .45; filter: grayscale(.4); }
+
+      #iad-v6-inline-review .iad-v6-text {
+        font-size: 14px;
+        font-weight: 650;
+        line-height: 1.45;
+        margin-bottom: 8px;
+      }
+
+      #iad-v6-inline-review .iad-v6-meta {
+        font-size: 12px;
+        color: #475569;
+        line-height: 1.45;
+        margin-top: 5px;
+      }
+
+      #iad-v6-inline-review .iad-v6-badge {
+        display: inline-flex;
+        border: 1px solid #64748b;
+        border-radius: 999px;
+        padding: 3px 8px;
+        margin: 2px;
+        font-size: 11px;
+        font-weight: 900;
+        background: #f8fafc;
+      }
+
+      #iad-v6-inline-review .iad-v6-actions,
+      #iad-v6-inline-review .iad-v6-toolbar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+
+      #iad-v6-inline-review button {
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #fff;
+        color: #0f172a;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      #iad-v6-final-report {
+        width: 100%;
+        min-height: 520px;
+        border-radius: 14px;
+        border: 1px solid #1e293b;
+        background: #071326;
+        color: #f8fafc;
+        padding: 12px;
+        font-size: 13px;
+        line-height: 1.45;
+        resize: vertical;
+      }
+
+      @media (max-width:1100px) {
+        #iad-v6-inline-review .iad-v6-grid { grid-template-columns: 1fr; }
+        #iad-v6-final-report { min-height: 320px; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function root() {
+    styles();
+
+    let el = document.getElementById("iad-v6-inline-review");
+    if (el) return el;
+
+    el = document.createElement("div");
+    el.id = "iad-v6-inline-review";
+
+    const audit = document.getElementById("iad-v6-source-audit");
+    const primary = document.getElementById("iad-rad-one-primary-report");
+    const results = document.getElementById("iad-rad-one-results");
+
+    if (audit && audit.parentNode) {
+      audit.parentNode.insertBefore(el, audit.nextSibling);
+    } else if (primary && primary.parentNode) {
+      primary.parentNode.insertBefore(el, primary);
+    } else if (results) {
+      results.appendChild(el);
+    } else {
+      document.body.appendChild(el);
+    }
+
+    return el;
+  }
+
+  function blockHtml(block) {
+    const tipo = String(block.tipo || "normal").toLowerCase();
+    const texto = String(block.texto || "");
+    const original = String(block.original || "");
+    const explicacion = String(block.explicacion || "");
+    const fuente = String(block.fuente || "");
+    const motivos = Array.isArray(block.motivos) ? block.motivos : [];
+
+    return `
+      <article class="iad-v6-card" data-tipo="${esc(tipo)}" data-accepted="1">
+        <div class="iad-v6-text" contenteditable="false">${esc(texto)}</div>
+        <div>
+          <span class="iad-v6-badge">${esc(tipo.toUpperCase())}</span>
+          ${fuente ? '<span class="iad-v6-badge">' + esc(fuente) + '</span>' : ''}
+          ${block.requiere_revision ? '<span class="iad-v6-badge">REVISAR</span>' : ''}
+        </div>
+        ${original ? '<div class="iad-v6-meta"><strong>Original:</strong> ' + esc(original) + '</div>' : ''}
+        ${explicacion ? '<div class="iad-v6-meta">' + esc(explicacion) + '</div>' : ''}
+        ${motivos.length ? '<div class="iad-v6-meta"><strong>Motivos:</strong><ul>' + motivos.map(function(m){return '<li>'+esc(m)+'</li>';}).join("") + '</ul></div>' : ''}
+        <div class="iad-v6-actions">
+          <button type="button" data-iad-v6-action="accept">Aceptar</button>
+          <button type="button" data-iad-v6-action="reject">Rechazar</button>
+          <button type="button" data-iad-v6-action="edit">Editar</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderReview(data) {
+    if (!data || !Array.isArray(data.secciones)) {
+      console.warn("[IAD V6] Revisión inválida:", data);
+      return;
+    }
+
+    const el = root();
+    const title = String(data.titulo || "Informe en revisión");
+    const warnings = Array.isArray(data.advertencias) ? data.advertencias : [];
+
+    let left = '<h3>' + esc(title) + '</h3>';
+
+    data.secciones.forEach(function (sec) {
+      left += '<section class="iad-v6-section" data-section-title="' + esc(sec.titulo || "") + '">';
+      left += '<h3>' + esc(sec.titulo || "") + '</h3>';
+
+      const blocks = Array.isArray(sec.bloques) ? sec.bloques : [];
+      blocks.forEach(function (block) {
+        left += blockHtml(block);
+      });
+
+      left += '</section>';
+    });
+
+    el.innerHTML = `
+      <div class="iad-v6-head">
+        <div class="iad-v6-title">Informe en modo revisión</div>
+        <div>
+          <span class="iad-v6-badge">Agregado</span>
+          <span class="iad-v6-badge">Reemplazado</span>
+          <span class="iad-v6-badge">Revisar</span>
+          <span class="iad-v6-badge">Conflicto</span>
+        </div>
+      </div>
+
+      ${warnings.length ? '<div class="iad-v6-warning"><strong>Advertencias:</strong><ul>' + warnings.map(function(w){return '<li>'+esc(w)+'</li>';}).join("") + '</ul></div>' : ''}
+
+      <div class="iad-v6-grid">
+        <div class="iad-v6-left">${left}</div>
+        <div class="iad-v6-right">
+          <h3>Informe limpio final</h3>
+          <div class="iad-v6-meta">Edita tarjetas a la izquierda o el texto final aquí. Esto alimenta internamente “Resultado revisado”.</div>
+          <div class="iad-v6-toolbar">
+            <button type="button" id="iad-v6-accept-all">Aceptar todo</button>
+            <button type="button" id="iad-v6-rebuild">Actualizar informe limpio</button>
+            <button type="button" id="iad-v6-copy">Copiar informe limpio</button>
+          </div>
+          <textarea id="iad-v6-final-report"></textarea>
+        </div>
+      </div>
+    `;
+
+    hideLegacy();
+    wireReview();
+    rebuildFinal();
+  }
+
+  function rebuildFinal() {
+    const el = document.getElementById("iad-v6-inline-review");
+    if (!el) return "";
+
+    const lines = [];
+    const title = el.querySelector(".iad-v6-left > h3");
+
+    if (title && title.innerText.trim()) {
+      lines.push(title.innerText.trim());
+      lines.push("");
+    }
+
+    el.querySelectorAll(".iad-v6-section").forEach(function (section) {
+      const secTitle = String(section.getAttribute("data-section-title") || "").trim();
+
+      if (secTitle) {
+        lines.push(secTitle);
+        lines.push("");
+      }
+
+      section.querySelectorAll(".iad-v6-card").forEach(function (card) {
+        if (card.classList.contains("rejected")) return;
+
+        const tipo = String(card.getAttribute("data-tipo") || "").toLowerCase();
+        if (tipo === "conflicto" || tipo === "eliminado") return;
+
+        const textNode = card.querySelector(".iad-v6-text");
+        const val = textNode ? String(textNode.innerText || "").trim() : "";
+
+        if (val) {
+          lines.push(val);
+          lines.push("");
+        }
+      });
+    });
+
+    const finalText = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+
+    const area = document.getElementById("iad-v6-final-report");
+    if (area) area.value = finalText;
+
+    const hidden = document.getElementById("iad-rad-one-revised-report");
+    if (hidden) hidden.value = finalText;
+
+    return finalText;
+  }
+
+  function wireReview() {
+    const el = document.getElementById("iad-v6-inline-review");
+    if (!el || el.dataset.wired === "1") return;
+
+    el.dataset.wired = "1";
+
+    el.addEventListener("click", function (ev) {
+      const btn = ev.target.closest("button");
+      if (!btn) return;
+
+      if (btn.id === "iad-v6-accept-all") {
+        el.querySelectorAll(".iad-v6-card").forEach(function (card) {
+          card.classList.remove("rejected");
+          card.setAttribute("data-accepted", "1");
+        });
+        rebuildFinal();
+        return;
+      }
+
+      if (btn.id === "iad-v6-rebuild") {
+        rebuildFinal();
+        return;
+      }
+
+      if (btn.id === "iad-v6-copy") {
+        const area = document.getElementById("iad-v6-final-report");
+        if (area) navigator.clipboard.writeText(area.value || "").catch(function () {
+          area.focus();
+          area.select();
+        });
+        return;
+      }
+
+      const action = btn.getAttribute("data-iad-v6-action");
+      const card = btn.closest(".iad-v6-card");
+
+      if (!action || !card) return;
+
+      if (action === "accept") {
+        card.classList.remove("rejected");
+        card.setAttribute("data-accepted", "1");
+        rebuildFinal();
+      }
+
+      if (action === "reject") {
+        card.classList.add("rejected");
+        card.setAttribute("data-accepted", "0");
+        rebuildFinal();
+      }
+
+      if (action === "edit") {
+        const t = card.querySelector(".iad-v6-text");
+        if (t) {
+          t.contentEditable = "true";
+          t.focus();
+          card.classList.remove("rejected");
+          card.setAttribute("data-accepted", "1");
+        }
+      }
+    });
+
+    el.addEventListener("input", function (ev) {
+      if (ev.target && ev.target.id === "iad-v6-final-report") {
+        const hidden = document.getElementById("iad-rad-one-revised-report");
+        if (hidden) hidden.value = ev.target.value || "";
+        return;
+      }
+
+      if (ev.target && ev.target.closest(".iad-v6-text")) {
+        rebuildFinal();
+      }
+    });
+  }
+
+  async function buildInlineReview(source, generated) {
+    source = norm(source || fullSourceText());
+    generated = norm(generated || "");
+
+    if (!source || !generated) return;
+
+    ensureAudit(source);
+
+    const response = await window.__iadV6NativeFetch("/iad/api/validar-dictado-informe.json", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        source_text: source,
+        generated_text: generated
+      })
+    });
+
+    if (!response.ok) {
+      const txt = await response.text();
+      throw new Error("Validación/revisión HTTP " + response.status + ": " + txt.slice(0, 300));
+    }
+
+    const data = await response.json();
+    window.__iadLastValidation = data;
+
+    if (data && data.revision) {
+      renderReview(data.revision);
+    }
+  }
+
+  window.__iadV6NativeFetch = window.__iadV6NativeFetch || window.fetch.bind(window);
+
+  window.fetch = async function iadV6Fetch(input, init) {
+    let url = typeof input === "string" ? input : (input && input.url ? input.url : "");
+    let nextInput = input;
+    let nextInit = init ? Object.assign({}, init) : {};
+
+    const raw = fullSourceText();
+
+    if (url.includes("/iad/analizar-radiologia.json")) {
+      console.log("[IAD V6] Redirigiendo análisis viejo a endpoint estructurado");
+      url = url.replace("/iad/analizar-radiologia.json", "/iad/analizar-radiologia-estructurada.json");
+      nextInput = url;
+
+      const body = new URLSearchParams(nextInit.body || "");
+      body.set("texto_bruto", raw);
+      nextInit.body = body.toString();
+
+      ensureAudit(raw);
+    }
+
+    if (url.includes("/iad/analizar-radiologia-estructurada.json")) {
+      const body = new URLSearchParams(nextInit.body || "");
+      body.set("texto_bruto", raw);
+      nextInit.body = body.toString();
+
+      ensureAudit(raw);
+    }
+
+    if (url.includes("/iad/generar-informe-radiologico.json")) {
+      console.log("[IAD V6] Redirigiendo generación vieja a endpoint estructurado");
+      url = url.replace("/iad/generar-informe-radiologico.json", "/iad/generar-informe-radiologico-estructurado.json");
+      nextInput = url;
+    }
+
+    if (url.includes("/iad/generar-informe-radiologico-estructurado.json")) {
+      const body = new URLSearchParams(nextInit.body || "");
+      if (window.__iadV6ClinicalJson) {
+        body.set("clinical_json", JSON.stringify(window.__iadV6ClinicalJson));
+      }
+      nextInit.body = body.toString();
+    }
+
+    const response = await window.__iadV6NativeFetch(nextInput, nextInit);
+
+    try {
+      if (url.includes("/iad/analizar-radiologia-estructurada.json")) {
+        response.clone().json().then(function (data) {
+          window.__iadLastAnalysis = data;
+          if (data && data.clinical_json) {
+            window.__iadV6ClinicalJson = data.clinical_json;
+            window.__iadLastClinicalJson = data.clinical_json;
+          }
+        }).catch(function () {});
+      }
+
+      if (url.includes("/iad/generar-informe-radiologico-estructurado.json")) {
+        response.clone().json().then(function (data) {
+          window.__iadLastGenerated = data;
+          const report = data && data.informe_final ? String(data.informe_final) : "";
+
+          setTimeout(function () {
+            hideLegacy();
+            buildInlineReview(fullSourceText(), report).catch(function (err) {
+              console.error("[IAD V6] No se pudo renderizar panel inline:", err);
+            });
+          }, 150);
+        }).catch(function (err) {
+          console.error("[IAD V6] No se pudo leer respuesta de generación:", err);
+        });
+      }
+    } catch (err) {
+      console.error("[IAD V6] Error post-fetch:", err);
+    }
+
+    return response;
+  };
+
+  setInterval(function () {
+    hideLegacy();
+
+    const raw = fullSourceText();
+    if (raw) ensureAudit(raw);
+  }, 1200);
 })();
 </script>

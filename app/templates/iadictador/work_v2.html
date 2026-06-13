@@ -1,0 +1,390 @@
+{% extends "iadictador/base.html" %}
+
+{% block title %}Nueva OT{% endblock %}
+
+{% block content %}
+<style>
+  .iad-workv2 {
+    max-width: 1500px;
+  }
+
+  .iad-workv2 .topbar {
+    background: linear-gradient(135deg, #132f48, #1f345e);
+    border: 1px solid #2d496b;
+    border-radius: 18px;
+    padding: 18px 22px;
+    margin-bottom: 16px;
+  }
+
+  .iad-workv2 .topbar h2 {
+    margin: 0;
+    font-size: 24px;
+  }
+
+  .iad-workv2 .muted {
+    color: var(--muted);
+  }
+
+  .iad-workv2 .work-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .iad-workv2 .work-card h3 {
+    margin-top: 0;
+    font-size: 17px;
+  }
+
+  .iad-workv2 textarea {
+    width: 100%;
+    min-height: 155px;
+    border-radius: 13px;
+    border: 1px solid var(--border);
+    background: #0c1827;
+    color: var(--text);
+    padding: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    line-height: 1.45;
+    resize: vertical;
+  }
+
+  .iad-workv2 input[type="file"] {
+    display: block;
+    width: 100%;
+    background: #0c1827;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    padding: 10px;
+    margin: 10px 0;
+  }
+
+  .iad-workv2 button {
+    border: 0;
+    border-radius: 11px;
+    padding: 10px 14px;
+    font-weight: 800;
+    cursor: pointer;
+    color: #0b1220;
+    background: #facc15;
+    margin: 3px;
+  }
+
+  .iad-workv2 button.secondary {
+    background: #38bdf8;
+    color: #062235;
+  }
+
+  .iad-workv2 button.danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .iad-workv2 button.ok {
+    background: #22c55e;
+    color: #05230f;
+  }
+
+  .iad-workv2 button:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+  }
+
+  .iad-workv2 .audio-item {
+    background: #1d2b40;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+    margin: 10px 0;
+  }
+
+  .iad-workv2 .audio-item audio {
+    width: 100%;
+    margin: 8px 0;
+  }
+
+  .iad-workv2 .audio-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .iad-workv2 .status {
+    color: var(--muted);
+    margin-top: 8px;
+    min-height: 20px;
+  }
+
+  .iad-workv2 .meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .iad-workv2 .pillbox {
+    background: #0c1827;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    padding: 10px;
+  }
+
+  .iad-workv2 .pillbox strong {
+    display: block;
+    color: white;
+    margin-top: 2px;
+  }
+
+  #sourceAudit {
+    display: none;
+    margin: 12px 0;
+    padding: 12px 14px;
+    border-radius: 13px;
+    border: 1px solid #38bdf8;
+    background: #082f49;
+    color: #e0f2fe;
+    font-weight: 800;
+  }
+
+  #reviewPanel {
+    display: none;
+    margin-top: 16px;
+    background: #e8eef8;
+    color: #172033;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    padding: 16px;
+  }
+
+  .iad-workv2 .review-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .iad-workv2 .review-head h2 {
+    margin: 0;
+    font-size: 26px;
+    line-height: 1.1;
+  }
+
+  .iad-workv2 .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .iad-workv2 .badge {
+    display: inline-flex;
+    border: 1px solid #64748b;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 12px;
+    font-weight: 900;
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  .iad-workv2 .review-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(360px, .95fr);
+    gap: 15px;
+    align-items: start;
+  }
+
+  .iad-workv2 .review-left,
+  .iad-workv2 .review-right {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 16px;
+    padding: 15px;
+  }
+
+  .iad-workv2 .review-left h3,
+  .iad-workv2 .review-right h3 {
+    margin: 0 0 10px 0;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 8px;
+  }
+
+  .iad-workv2 .warn {
+    background: #fff7cc;
+    border: 1px solid #f59e0b;
+    border-radius: 13px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+
+  .iad-workv2 .review-card {
+    border-left: 5px solid #64748b;
+    background: #f8fafc;
+    border-radius: 13px;
+    padding: 10px 12px;
+    margin: 10px 0;
+  }
+
+  .iad-workv2 .review-card[data-kind="agregado"] {
+    border-left-color: #22c55e;
+    background: #dcfce7;
+  }
+
+  .iad-workv2 .review-card[data-kind="reemplazado"] {
+    border-left-color: #2563eb;
+    background: #dbeafe;
+  }
+
+  .iad-workv2 .review-card[data-kind="conflicto"] {
+    border-left-color: #ef4444;
+    background: #fee2e2;
+  }
+
+  .iad-workv2 .review-card[data-kind="revisar"] {
+    border-left-color: #f59e0b;
+    background: #fef3c7;
+  }
+
+  .iad-workv2 .review-card.rejected {
+    opacity: .45;
+    filter: grayscale(.4);
+  }
+
+  .iad-workv2 .review-text {
+    font-size: 14px;
+    line-height: 1.45;
+    font-weight: 650;
+    margin-bottom: 8px;
+  }
+
+  .iad-workv2 .small {
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.45;
+    margin-top: 5px;
+  }
+
+  #finalReport {
+    width: 100%;
+    min-height: 580px;
+    border-radius: 14px;
+    border: 1px solid #1e293b;
+    background: #071326;
+    color: #f8fafc;
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.45;
+    resize: vertical;
+  }
+
+  @media (max-width: 1100px) {
+    .iad-workv2 .meta {
+      grid-template-columns: 1fr;
+    }
+
+    .iad-workv2 .review-grid {
+      grid-template-columns: 1fr;
+    }
+
+    #finalReport {
+      min-height: 330px;
+    }
+  }
+</style>
+
+<div class="iad-workv2">
+  <div class="topbar">
+    <h2>Nueva OT</h2>
+    <div class="muted">Dictado → JSON clínico → informe → revisión visual inline.</div>
+  </div>
+
+  <section class="work-card">
+    <h3>Audio principal</h3>
+    <div class="muted">Sube varios audios o graba. Se transcriben todos antes de analizar.</div>
+
+    <input id="audioFiles" type="file" accept="audio/*" multiple>
+
+    <div>
+      <button id="recordBtn" type="button" class="secondary">Grabar</button>
+      <button id="stopBtn" type="button" class="danger" disabled>Detener</button>
+      <span id="recordTimer" class="muted">00:00</span>
+    </div>
+
+    <div id="audioList"></div>
+    <div id="audioStatus" class="status"></div>
+  </section>
+
+  <section class="work-card">
+    <h3>Información principal para el informe</h3>
+    <textarea id="sourceText" placeholder="Texto dictado o transcrito..."></textarea>
+
+    <div style="margin-top:12px;">
+      <button id="analyzeBtn" type="button">Analizar radiología</button>
+      <button id="transcribeAllBtn" type="button" class="secondary">Transcribir todo</button>
+      <button id="clearBtn" type="button" class="danger">Limpiar</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div class="meta">
+      <div class="pillbox">
+        Plantilla
+        <strong id="tplName">—</strong>
+      </div>
+      <div class="pillbox">
+        Confianza
+        <strong id="confidence">—</strong>
+      </div>
+      <div class="pillbox">
+        Método
+        <strong id="method">—</strong>
+      </div>
+    </div>
+
+    <div id="sourceAudit"></div>
+
+    <section id="reviewPanel">
+      <div class="review-head">
+        <h2>Informe en modo revisión</h2>
+        <div class="badges">
+          <span class="badge">Agregado</span>
+          <span class="badge">Reemplazado</span>
+          <span class="badge">Revisar</span>
+          <span class="badge">Conflicto</span>
+        </div>
+      </div>
+
+      <div id="warnings"></div>
+
+      <div class="review-grid">
+        <div class="review-left">
+          <h3>Revisión clínica</h3>
+          <div id="reviewCards"></div>
+        </div>
+
+        <div class="review-right">
+          <h3>Informe limpio final</h3>
+          <div class="small">Puedes editar tarjetas o editar directamente el informe final.</div>
+
+          <div style="margin:10px 0;">
+            <button id="acceptAllBtn" type="button">Aceptar todo</button>
+            <button id="rebuildBtn" type="button" class="secondary">Actualizar informe limpio</button>
+            <button id="copyBtn" type="button" class="secondary">Copiar informe limpio</button>
+            <button id="saveBtn" type="button" class="ok">Guardar revisión</button>
+          </div>
+
+          <textarea id="finalReport"></textarea>
+        </div>
+      </div>
+    </section>
+  </section>
+</div>
+
+<script src="/static/iadictador_work_v2.js?v=20260613012516"></script>
+{% endblock %}

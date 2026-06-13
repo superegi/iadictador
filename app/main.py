@@ -10,6 +10,7 @@ from app.iadictador.router import init_iadictador
 from app.iadictador.models import Workplace
 from app.iadictador.db import engine
 from sqlalchemy import inspect, text
+from app.iad_review import router as iad_review_router
 
 
 
@@ -197,3 +198,6 @@ async def health():
 ensure_iad_template_schema()
 init_iadictador()
 app.include_router(iadictador_router)
+
+# IA Dictador - modo revisión demo
+app.include_router(iad_review_router)

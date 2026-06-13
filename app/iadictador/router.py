@@ -1,6 +1,6 @@
 from app.services.ai.tasks.audio_transcriber import transcribe_audio_upload, AudioTranscriptionError
 from fastapi.responses import JSONResponse
-from fastapi import UploadFile, File
+from fastapi import UploadFile, File, Depends, Request
 from datetime import datetime
 from starlette.responses import Response as StarletteResponse
 import asyncio
@@ -410,7 +410,24 @@ def change_password_post(
 
 
 @router.get("/iad/trabajo", response_class=HTMLResponse)
-@router.get("/trabajo", response_class=HTMLResponse)
+def iad_work_page_unified(request: Request, db = Depends(get_db)):
+    try:
+        user = require_user(request, db)
+    except PermissionError:
+        return redirect("/iad/login")
+
+    if getattr(user, "must_change_password", False):
+        return redirect("/iad/cambiar-clave")
+
+    return render(
+        request,
+        "iadictador/work_v2.html",
+        {
+            "page": "trabajo",
+        },
+        db,
+    )
+
 def work_get(request: Request, db: Session = Depends(get_db)):
     try:
         user = require_user(request, db)
@@ -613,7 +630,7 @@ async def create_ot(
         hospital_service=clean_form_text(hospital_service) or None,
         report_type=clean_form_text(report_type) or None,
         modality=clean_form_text(modality) or None,
-        report_title=clean_form_text(report_title_value) or None,
+        report_title=clean_form_text(locals().get("report_title_value", locals().get("title", ""))) or None,
         billing_visible=user.billing_visible,
         billing_enabled=user.billing_enabled,
         charge_yes_no=bool(user.billing_enabled),
@@ -1501,7 +1518,7 @@ def template_new_post(
         radiology_use=clean_form_text(radiology_use),
         body_region=clean_form_text(body_region) or None,
         template_name=clean_form_text(template_name),
-        title=clean_form_text(report_title_value) or None,
+        title=clean_form_text(locals().get("report_title_value", locals().get("title", ""))) or None,
         technique=clean_form_text(technique) or None,
         background=clean_form_text(background) or None,
         findings=clean_form_text(findings) or None,
@@ -4362,3 +4379,302 @@ async def iad_admin_training_delete_selected_v3_json(
         "deleted": before,
         "ids": clean_ids,
     })
+
+
+# IAD_CLINICAL_JSON_ENDPOINTS_V1
+@router.post("/iad/analizar-radiologia-estructurada.json")
+async def analizar_radiologia_estructurada_json(
+    request: Request,
+    texto_bruto: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import JSONResponse
+    from app.services.ai.tasks.radiology_flow import analyze_radiology
+    from app.services.ai.tasks.clinical_json import extract_clinical_json, clinical_json_to_hallazgos_text
+
+    try:
+        require_user(request, db)
+    except PermissionError:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+
+    analysis = analyze_radiology(texto_bruto, db=db)
+
+    try:
+        clinical = extract_clinical_json(texto_bruto, analysis=analysis)
+    except Exception as exc:
+        clinical = {
+            "ok": False,
+            "version": "clinical_json_v1",
+            "dictado_original": texto_bruto,
+            "hallazgos": [],
+            "impresion_solicitada": [],
+            "conflictos": [],
+            "advertencias": [f"Falló clinical_json en endpoint estructurado: {exc}"],
+            "necesita_revision": True,
+            "metodo": "router_fallback_clinical_json_error",
+        }
+
+    try:
+        structured_text = clinical_json_to_hallazgos_text(clinical)
+    except Exception as exc:
+        structured_text = ""
+        clinical.setdefault("advertencias", []).append(f"No se pudo convertir clinical_json a texto estructurado: {exc}")
+
+    warnings = []
+    warnings.extend(analysis.get("advertencias") or [])
+    warnings.extend(clinical.get("advertencias") or [])
+
+    conflicts = clinical.get("conflictos") or []
+    if conflicts:
+        warnings.append("JSON clínico intermedio contiene conflictos que requieren revisión.")
+
+    out = dict(analysis)
+    out["clinical_json"] = clinical
+    out["hallazgos_radiologicos_originales"] = out.get("hallazgos_radiologicos", "")
+    out["hallazgos_radiologicos"] = structured_text or out.get("hallazgos_radiologicos", "")
+    out["advertencias"] = list(dict.fromkeys([str(x) for x in warnings if str(x).strip()]))
+    out["necesita_revision"] = bool(out.get("necesita_revision") or clinical.get("necesita_revision") or conflicts)
+    out["metodo"] = "analisis_estructurado_clinical_json_v1"
+
+    return JSONResponse(out)
+
+
+@router.post("/iad/generar-informe-radiologico-estructurado.json")
+async def generar_informe_radiologico_estructurado_json(
+    request: Request,
+    plantilla_nombre: str = Form(""),
+    plantilla_id: str = Form(""),
+    hallazgos: str = Form(""),
+    clinical_json: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import JSONResponse
+    import json as _json
+    from app.services.ai.tasks.radiology_flow import generate_report_from_template
+    from app.services.ai.tasks.clinical_json import clinical_json_to_hallazgos_text
+
+    try:
+        require_user(request, db)
+    except PermissionError:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+
+    parsed = {}
+    if clinical_json:
+        try:
+            parsed = _json.loads(clinical_json)
+        except Exception as exc:
+            parsed = {
+                "ok": False,
+                "advertencias": [f"clinical_json no era JSON válido: {exc}"],
+                "conflictos": [],
+            }
+
+    structured_hallazgos = ""
+    if parsed:
+        try:
+            structured_hallazgos = clinical_json_to_hallazgos_text(parsed)
+        except Exception as exc:
+            structured_hallazgos = ""
+            parsed.setdefault("advertencias", []).append(f"No se pudo convertir clinical_json a hallazgos: {exc}")
+
+    final_hallazgos = structured_hallazgos or hallazgos
+
+    result = generate_report_from_template(
+        final_hallazgos,
+        template_name=plantilla_nombre,
+        template_id=plantilla_id,
+        db=db,
+    )
+
+    warnings = []
+    warnings.extend(result.get("advertencias") or [])
+    warnings.extend(parsed.get("advertencias") or [])
+
+    if parsed.get("conflictos"):
+        warnings.append("El informe fue generado desde JSON clínico con conflictos pendientes. Revisar antes de firmar.")
+
+    out = dict(result)
+    out["clinical_json"] = parsed
+    out["hallazgos_estructurados_usados"] = final_hallazgos
+    out["advertencias"] = list(dict.fromkeys([str(x) for x in warnings if str(x).strip()]))
+    out["metodo"] = "generacion_desde_clinical_json_v1"
+
+    return JSONResponse(out)
+
+
+# IAD_WORK_V2_ROUTE
+@router.get("/iad/trabajo2")
+def iad_work_v2_alias():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/iad/trabajo", status_code=303)
+@router.post("/iad/api/revision-clinica-v2.json")
+async def iad_api_revision_clinica_v2(request: Request):
+    import json
+    from app.services.clinical_review_engine import review_clinical_report
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    source_text = (
+        payload.get("source_text")
+        or payload.get("dictado_original")
+        or payload.get("texto_bruto")
+        or ""
+    )
+
+    base_text = (
+        payload.get("base_text")
+        or payload.get("generated_text")
+        or payload.get("informe_generado")
+        or payload.get("informe_final")
+        or ""
+    )
+
+    clinical_json = payload.get("clinical_json") or {}
+
+    if isinstance(clinical_json, str):
+        try:
+            clinical_json = json.loads(clinical_json)
+        except Exception:
+            clinical_json = {"raw": clinical_json}
+
+    return review_clinical_report(
+        source_text=source_text,
+        base_text=base_text,
+        clinical_json=clinical_json,
+    )
+
+# IAD_WORK_LEGACY_ROUTE_V1
+
+@router.get("/iad/trabajo_legacy")
+def iad_work_legacy_page(request: Request, db = Depends(get_db)):
+    from fastapi.responses import RedirectResponse
+    from fastapi.templating import Jinja2Templates
+
+    try:
+        user = require_user(request, db)
+    except PermissionError:
+        return RedirectResponse("/iad/login", status_code=303)
+
+    tmpl = globals().get("templates")
+    if tmpl is None:
+        tmpl = Jinja2Templates(directory="app/templates")
+
+    return tmpl.TemplateResponse(
+        "iadictador/work.html",
+        {
+            "request": request,
+            "user": user,
+            "current_user": user,
+            "page": "trabajo_legacy",
+        },
+    )
+
+
+# IAD_WORK_STORE_ENDPOINTS_V1
+def _iad_username_from_user(user):
+    try:
+        if isinstance(user, dict):
+            return str(user.get("username") or user.get("nombre") or user.get("email") or "usuario")
+        return str(
+            getattr(user, "username", None)
+            or getattr(user, "nombre", None)
+            or getattr(user, "email", None)
+            or "usuario"
+        )
+    except Exception:
+        return "usuario"
+
+
+def _iad_is_admin_user(user):
+    try:
+        if isinstance(user, dict):
+            role = str(user.get("role") or user.get("rol") or "")
+        else:
+            role = str(getattr(user, "role", None) or getattr(user, "rol", None) or "")
+        return role.lower() == "admin"
+    except Exception:
+        return False
+
+
+@router.post("/iad/api/trabajo/guardar_revision.json")
+async def iad_api_guardar_revision_trabajo(request: Request, db = Depends(get_db)):
+    from app.services.iad_work_store import save_work_record
+
+    try:
+        user = require_user(request, db)
+    except PermissionError:
+        return {"ok": False, "error": "No autenticado"}
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    username = _iad_username_from_user(user)
+
+    if not payload.get("final_report"):
+        return {"ok": False, "error": "No hay informe final para guardar"}
+
+    result = save_work_record(payload, username=username)
+    return result
+
+
+@router.get("/iad/api/trabajo/historial.json")
+def iad_api_trabajo_historial(request: Request, db = Depends(get_db), limit: int = 50):
+    from app.services.iad_work_store import list_work_records
+
+    try:
+        user = require_user(request, db)
+    except PermissionError:
+        return {"ok": False, "error": "No autenticado", "items": []}
+
+    username = _iad_username_from_user(user)
+    all_users = _iad_is_admin_user(user)
+
+    return {
+        "ok": True,
+        "items": list_work_records(limit=limit, username=username, all_users=all_users),
+    }
+
+
+@router.get("/iad/api/training/samples.json")
+def iad_api_training_samples(request: Request, db = Depends(get_db), limit: int = 50):
+    from app.services.iad_work_store import list_training_samples
+
+    try:
+        user = require_user(request, db)
+    except PermissionError:
+        return {"ok": False, "error": "No autenticado", "items": []}
+
+    username = _iad_username_from_user(user)
+    all_users = _iad_is_admin_user(user)
+
+    return {
+        "ok": True,
+        "items": list_training_samples(limit=limit, username=username, all_users=all_users),
+    }
+
+
+# IAD_TRAINING_PAGE_ROUTE_V1
+@router.get("/iad/training", response_class=HTMLResponse)
+def iad_training_page(request: Request, db = Depends(get_db)):
+    try:
+        user = require_user(request, db)
+    except PermissionError:
+        return redirect("/iad/login")
+
+    if getattr(user, "must_change_password", False):
+        return redirect("/iad/cambiar-clave")
+
+    return render(
+        request,
+        "iadictador/training.html",
+        {
+            "page": "training",
+        },
+        db,
+    )
+
