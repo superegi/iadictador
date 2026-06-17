@@ -206,9 +206,11 @@ app.include_router(iad_review_router)
 from app.iadictador.rules_router import router as iad_rules_router
 from app.iadictador.rules_repo_router import router as iad_rules_repo_router
 from app.iadictador.v4_trace_router import router as iad_v4_trace_router
+from app.iadictador.v4_validation_sync_router import router as iad_v4_validation_sync_router
 from app.iadictador.v3_audio_router import router as iad_v3_audio_router
 
 app.include_router(iad_rules_router)
 app.include_router(iad_rules_repo_router)
 app.include_router(iad_v4_trace_router)
+app.include_router(iad_v4_validation_sync_router)
 app.include_router(iad_v3_audio_router)
