@@ -1,6 +1,8 @@
+<link rel="stylesheet" href="/static/iad_v4_header_panels.css">
+<link rel="stylesheet" href="/static/iadictador_logo_loading.css">
 <link rel="stylesheet" href="/static/iadictador_sidebar_fix.css">
 {% extends "iadictador/base.html" %}
-{% block title %}IA Dictador - Trining IA #{{ training_id }}{% endblock %}
+{% block title %}dIctAdor - Training IA #{{ training_id }}{% endblock %}
 
 {% block content %}
 <style>
@@ -16,9 +18,9 @@
 </style>
 
 <section class="iad2-card">
-  <h1 class="iad2-title">Trining IA #{{ training_id }}</h1>
+  <h1 class="iad2-title">Training IA #{{ training_id }}</h1>
   <div class="iad2-muted">Detalle completo de la entrada de aprendizaje.</div>
-  <div style="margin-top:10px"><a class="iad2-link" href="/iad/trining-ia">← Volver a Trining IA</a></div>
+  <div style="margin-top:10px"><a class="iad2-link" href="/iad/trining-ia">← Volver a Training IA</a></div>
 </section>
 
 {% if not item %}
@@ -85,3 +87,7 @@ Nota: registro antiguo o sin traza completa.{% endif %}</div>
 <script src="/static/iadictador_v4_trace_panel.js"></script>
 
 <script src="/static/iad_v4_validation_sync.js"></script>
+
+<script src="/static/iadictador_logo_loading.js"></script>
+
+<script src="/static/iad_v4_header_panels.js"></script>

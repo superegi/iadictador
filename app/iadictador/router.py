@@ -8342,3 +8342,46 @@ try:
 except Exception:
     pass
 
+
+# ---------------------------------------------------------------------
+# dIctAdor V4: evita duplicados visibles en Historial.
+# Algunos registros V4 ya se persisten directamente como core_v4_auto.
+# El backfill desde Training IA puede reinsertarlos como backfill_training.
+# Este wrapper limpia esos duplicados cada vez que se consulta Historial.
+# ---------------------------------------------------------------------
+try:
+    _dictador_orig_h2wi_backfill_from_training_v4_cleanup = _iad_h2wi_backfill_from_training
+
+    def _iad_h2wi_backfill_from_training(db, limit=200):
+        result = _dictador_orig_h2wi_backfill_from_training_v4_cleanup(db, limit=limit)
+
+        deleted = 0
+        try:
+            db.execute(text("""
+                DELETE FROM iad_history2_work_items
+                WHERE source = 'backfill_training'
+                  AND (
+                    version_ia LIKE 'core_v4%'
+                    OR source_ref LIKE '%core_v4_%'
+                    OR metadata_json LIKE '%core_v4_%'
+                    OR metadata_json LIKE '%core_v4_auto%'
+                  )
+            """))
+            try:
+                deleted = int(db.execute(text("SELECT changes()")).scalar() or 0)
+            except Exception:
+                deleted = 0
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
+        if isinstance(result, dict):
+            result["core_v4_backfill_duplicates_deleted"] = deleted
+
+        return result
+
+except Exception:
+    pass

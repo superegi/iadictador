@@ -1,7 +1,7 @@
 (function dictadorSidebarFix() {
   const BRAND_HTML = `
     <div class="dictador-sidebar-brand">
-      <img src="/static/img/dictador_logo.svg" alt="dIctAdor">
+      <img src="/static/img/logo.png" alt="dIctAdor">
       <div>
         <div class="dictador-sidebar-brand-title">d<span class="ai">I</span>ct<span class="ai">A</span>dor</div>
         <div class="dictador-sidebar-brand-subtitle">radiología asistida</div>
