@@ -17,6 +17,7 @@ from .template_store import (
     load_available_templates,
 )
 from .usage import UsageLog, now_ms
+from .persistence import persist_v4_job
 from .rules_store import load_effective_rules, write_job_rule_audit
 
 
@@ -402,6 +403,18 @@ async def process_web_endpoint_response(
                 "informe_final": str(job_dir / "informe_final.txt"),
             },
         }
+
+        result["auto_persist"] = persist_v4_job(
+            db=db,
+            job_id=job_id,
+            job_dir=str(job_dir),
+            result=result,
+            username=username,
+            selected_template=selected,
+            transcript=transcript,
+            extra_context_normalized=extra_context_normalized,
+            audio_merge_info=audio_merge_info,
+        )
 
         write_text(job_dir / "prompt.txt", prompt)
         write_text(job_dir / "raw_model_response.txt", raw)
