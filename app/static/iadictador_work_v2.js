@@ -4108,3 +4108,420 @@
     addLink();
   }
 })();
+
+
+// dIctAdor V4 audio/text flow guard
+(function iadV4AudioTextFlowGuard() {
+  const STORAGE_KEY = "dictador_v4_user_extra_context_text";
+
+  function isVisible(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    return !!(rect.width || rect.height || el.getClientRects().length);
+  }
+
+  function candidateElements() {
+    const selectors = [
+      "#extra_context",
+      "#extra-context",
+      "#texto_complementario",
+      "#texto-complementario",
+      "#audio-extra-context",
+      "#iad-extra-context",
+      "[name='extra_context']",
+      "[name='texto_complementario']",
+      "[data-iad-extra-context='1']",
+      "textarea",
+      "[contenteditable='true']"
+    ];
+
+    const found = [];
+    for (const sel of selectors) {
+      document.querySelectorAll(sel).forEach(el => {
+        if (!found.includes(el)) found.push(el);
+      });
+    }
+    return found;
+  }
+
+  function labelTextFor(el) {
+    const id = el.id || "";
+    let txt = [
+      id,
+      el.name || "",
+      el.placeholder || "",
+      el.getAttribute("aria-label") || "",
+      el.getAttribute("data-label") || ""
+    ].join(" ").toLowerCase();
+
+    if (id) {
+      const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+      if (label) txt += " " + label.textContent.toLowerCase();
+    }
+
+    const parent = el.closest("section, div, fieldset, article");
+    if (parent) txt += " " + (parent.textContent || "").slice(0, 500).toLowerCase();
+
+    return txt;
+  }
+
+  function elementValue(el) {
+    if (!el) return "";
+    if (el.isContentEditable) return (el.innerText || "").trim();
+    return (el.value || "").trim();
+  }
+
+  function setElementValue(el, value) {
+    if (!el) return;
+    if (el.isContentEditable) {
+      el.innerText = value;
+    } else if ("value" in el) {
+      el.value = value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  function getUserComplementText() {
+    const els = candidateElements();
+
+    const preferred = els.filter(el => {
+      const t = labelTextFor(el);
+      return (
+        t.includes("complement") ||
+        t.includes("antecedente") ||
+        t.includes("context") ||
+        t.includes("texto") ||
+        t.includes("observaci") ||
+        t.includes("nota")
+      );
+    });
+
+    const scan = preferred.length ? preferred : els;
+
+    for (const el of scan) {
+      const value = elementValue(el);
+      if (!value) continue;
+
+      // Evitar capturar el informe final completo como contexto.
+      const t = labelTextFor(el);
+      if (
+        t.includes("informe final") ||
+        t.includes("resultado") ||
+        t.includes("hallazgos estructurados")
+      ) {
+        continue;
+      }
+
+      return value;
+    }
+
+    return "";
+  }
+
+  function restoreComplementText() {
+    const saved = localStorage.getItem(STORAGE_KEY) || "";
+    if (!saved) return;
+
+    const els = candidateElements();
+    const preferred = els.filter(el => {
+      const t = labelTextFor(el);
+      return (
+        t.includes("complement") ||
+        t.includes("antecedente") ||
+        t.includes("context") ||
+        t.includes("texto") ||
+        t.includes("observaci") ||
+        t.includes("nota")
+      );
+    });
+
+    const target = preferred.find(isVisible) || preferred[0];
+    if (target && !elementValue(target)) {
+      setElementValue(target, saved);
+    }
+  }
+
+  function rememberFromEvent(ev) {
+    const el = ev.target;
+    if (!el) return;
+    if (!(el.matches && (el.matches("textarea") || el.matches("input") || el.isContentEditable))) return;
+
+    const t = labelTextFor(el);
+    if (
+      t.includes("complement") ||
+      t.includes("antecedente") ||
+      t.includes("context") ||
+      t.includes("observaci") ||
+      t.includes("nota")
+    ) {
+      const value = elementValue(el);
+      localStorage.setItem(STORAGE_KEY, value);
+    }
+  }
+
+  function restoreAudioUi() {
+    document.querySelectorAll("button, input, textarea").forEach(el => {
+      const txt = [
+        el.id || "",
+        el.name || "",
+        el.textContent || "",
+        el.value || "",
+        el.getAttribute("aria-label") || ""
+      ].join(" ").toLowerCase();
+
+      if (
+        txt.includes("audio") ||
+        txt.includes("grabar") ||
+        txt.includes("grabación") ||
+        txt.includes("grabacion") ||
+        txt.includes("mic") ||
+        txt.includes("analizar") ||
+        txt.includes("radiolog")
+      ) {
+        el.disabled = false;
+        el.removeAttribute("disabled");
+        el.classList.remove("disabled");
+        el.classList.remove("is-disabled");
+      }
+    });
+
+    restoreComplementText();
+  }
+
+  document.addEventListener("input", rememberFromEvent, true);
+  document.addEventListener("change", rememberFromEvent, true);
+
+  const originalFetch = window.fetch;
+  window.fetch = async function iadV4FetchWrapper(input, init) {
+    const url = (typeof input === "string") ? input : (input && input.url) || "";
+
+    const isAudioEndpoint = url.includes("/iad/api/audio/procesar-dictado-completo.json");
+    const body = init && init.body;
+
+    if (isAudioEndpoint && body instanceof FormData) {
+      const userText = getUserComplementText();
+
+      if (userText) {
+        localStorage.setItem(STORAGE_KEY, userText);
+
+        const oldExtra = body.get("extra_context");
+        let payload = {};
+
+        if (typeof oldExtra === "string" && oldExtra.trim()) {
+          try {
+            payload = JSON.parse(oldExtra);
+          } catch (e) {
+            payload = { raw_extra_context: oldExtra };
+          }
+        }
+
+        payload.user_complement_text = userText;
+        payload.texto_complementario_usuario = userText;
+
+        body.set("extra_context", JSON.stringify(payload));
+      }
+
+      try {
+        const response = await originalFetch.apply(this, arguments);
+        setTimeout(restoreAudioUi, 300);
+        setTimeout(restoreAudioUi, 1200);
+        return response;
+      } catch (err) {
+        setTimeout(restoreAudioUi, 300);
+        throw err;
+      }
+    }
+
+    return originalFetch.apply(this, arguments);
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", restoreComplementText);
+  } else {
+    restoreComplementText();
+  }
+})();
+
+
+// dIctAdor V4 post-analysis reset guard
+(function iadV4PostAnalysisResetGuard() {
+  const STORAGE_KEYS = [
+    "dictador_v4_user_extra_context_text",
+    "iad_v4_user_extra_context_text",
+    "iad_extra_context_text",
+    "texto_complementario_usuario"
+  ];
+
+  function labelTextFor(el) {
+    if (!el) return "";
+    const id = el.id || "";
+    let txt = [
+      id,
+      el.name || "",
+      el.placeholder || "",
+      el.getAttribute("aria-label") || "",
+      el.getAttribute("data-label") || ""
+    ].join(" ").toLowerCase();
+
+    if (id && window.CSS && CSS.escape) {
+      const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+      if (label) txt += " " + (label.textContent || "").toLowerCase();
+    }
+
+    const parent = el.closest("section, div, fieldset, article");
+    if (parent) txt += " " + (parent.textContent || "").slice(0, 700).toLowerCase();
+
+    return txt;
+  }
+
+  function isComplementField(el) {
+    if (!el) return false;
+    if (!(el.matches && (el.matches("textarea") || el.matches("input[type='text']") || el.isContentEditable))) {
+      return false;
+    }
+
+    const t = labelTextFor(el);
+
+    if (
+      t.includes("informe final") ||
+      t.includes("resultado") ||
+      t.includes("extracción ia") ||
+      t.includes("extraccion ia") ||
+      t.includes("tags") ||
+      t.includes("debug") ||
+      t.includes("depuración") ||
+      t.includes("depuracion")
+    ) {
+      return false;
+    }
+
+    return (
+      t.includes("información principal") ||
+      t.includes("informacion principal") ||
+      t.includes("complement") ||
+      t.includes("antecedente") ||
+      t.includes("context") ||
+      t.includes("observaci") ||
+      t.includes("nota") ||
+      t.includes("texto adicional")
+    );
+  }
+
+  function clearComplementFields() {
+    document.querySelectorAll("textarea, input[type='text'], [contenteditable='true']").forEach(el => {
+      if (!isComplementField(el)) return;
+
+      if (el.isContentEditable) {
+        el.innerText = "";
+      } else if ("value" in el) {
+        el.value = "";
+      }
+
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    STORAGE_KEYS.forEach(k => {
+      try {
+        localStorage.removeItem(k);
+        sessionStorage.removeItem(k);
+      } catch (e) {}
+    });
+  }
+
+  function unlockControls() {
+    document.querySelectorAll("button, input, textarea, select").forEach(el => {
+      const txt = [
+        el.id || "",
+        el.name || "",
+        el.textContent || "",
+        el.value || "",
+        el.getAttribute("aria-label") || "",
+        el.className || ""
+      ].join(" ").toLowerCase();
+
+      const shouldUnlock =
+        txt.includes("analizar") ||
+        txt.includes("radiolog") ||
+        txt.includes("audio") ||
+        txt.includes("archivo") ||
+        txt.includes("elegir") ||
+        txt.includes("grabar") ||
+        txt.includes("grabación") ||
+        txt.includes("grabacion") ||
+        txt.includes("mic") ||
+        txt.includes("detener") ||
+        txt.includes("subir");
+
+      if (!shouldUnlock) return;
+
+      el.disabled = false;
+      el.removeAttribute("disabled");
+      el.classList.remove("disabled");
+      el.classList.remove("is-disabled");
+      el.classList.remove("loading");
+      el.classList.remove("working");
+      el.setAttribute("aria-busy", "false");
+    });
+
+    document.body.classList.remove("loading");
+    document.body.classList.remove("working");
+    document.body.classList.remove("iad-working");
+    document.body.setAttribute("aria-busy", "false");
+  }
+
+  function resetAfterAnalysis() {
+    clearComplementFields();
+    unlockControls();
+
+    // Repetir porque el render del resultado puede reescribir/rehabilitar estados tarde.
+    setTimeout(clearComplementFields, 250);
+    setTimeout(unlockControls, 250);
+
+    setTimeout(clearComplementFields, 900);
+    setTimeout(unlockControls, 900);
+
+    setTimeout(clearComplementFields, 1800);
+    setTimeout(unlockControls, 1800);
+  }
+
+  const previousFetch = window.fetch;
+  window.fetch = async function iadV4PostAnalysisFetchWrapper(input, init) {
+    const url = (typeof input === "string") ? input : (input && input.url) || "";
+    const isAudioEndpoint = url.includes("/iad/api/audio/procesar-dictado-completo.json");
+
+    try {
+      const response = await previousFetch.apply(this, arguments);
+
+      if (isAudioEndpoint) {
+        resetAfterAnalysis();
+      }
+
+      return response;
+    } catch (err) {
+      if (isAudioEndpoint) {
+        unlockControls();
+      }
+      throw err;
+    }
+  };
+
+  document.addEventListener("click", function(ev) {
+    const el = ev.target;
+    if (!el) return;
+
+    const txt = [
+      el.id || "",
+      el.name || "",
+      el.textContent || "",
+      el.getAttribute && (el.getAttribute("aria-label") || "")
+    ].join(" ").toLowerCase();
+
+    if (txt.includes("analizar") && txt.includes("radiolog")) {
+      unlockControls();
+    }
+  }, true);
+
+  window.iadV4ResetForNextAnalysis = resetAfterAnalysis;
+})();

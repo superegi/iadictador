@@ -9,6 +9,7 @@ from typing import Any
 from openai import OpenAI
 
 from .engine import build_report, transcribe_audio_files, write_json, write_text
+from .audio_merge import merge_audio_files_for_transcription
 from .json_utils import extract_json_object
 from .template_store import (
     build_template_catalog,
@@ -30,6 +31,75 @@ def _upload_base_dir() -> Path:
 def _rules_path() -> Path:
     return Path(os.getenv("IAD_RULES_FILE", "/data/reglas_radiologicas.md"))
 
+
+
+def _normalize_extra_context(extra_context: str) -> tuple[str, dict[str, Any]]:
+    raw = str(extra_context or "").strip()
+
+    meta: dict[str, Any] = {
+        "raw_chars": len(raw),
+        "parsed_json": False,
+        "keys": [],
+        "used_fields": [],
+    }
+
+    if not raw:
+        return "", meta
+
+    ignored_keys = {
+        "url",
+        "title",
+        "selected_template",
+        "note",
+        "flow",
+        "debug",
+    }
+
+    priority_keys = [
+        "user_complement_text",
+        "texto_complementario_usuario",
+        "extra_context_user_text",
+        "texto_complementario",
+        "complemento",
+        "complementary_text",
+        "patient_visible",
+        "antecedentes",
+        "centro",
+        "nombre",
+        "edad",
+        "sexo",
+    ]
+
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        meta["parsed_json"] = False
+        return raw, meta
+
+    if not isinstance(obj, dict):
+        return raw, meta
+
+    meta["parsed_json"] = True
+    meta["keys"] = list(obj.keys())
+
+    parts: list[str] = []
+
+    for key in priority_keys:
+        value = obj.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(f"{key}: {value.strip()}")
+            meta["used_fields"].append(key)
+
+    # Agregar otros campos útiles no técnicos.
+    for key, value in obj.items():
+        if key in ignored_keys or key in priority_keys:
+            continue
+        if isinstance(value, str) and value.strip():
+            parts.append(f"{key}: {value.strip()}")
+            meta["used_fields"].append(key)
+
+    text = "\n".join(parts).strip()
+    return text, meta
 
 def _read_rules() -> str:
     path = _rules_path()
@@ -192,8 +262,15 @@ async def process_web_endpoint_response(
             ot_id="",
         )
 
-        audio_paths = await _save_uploads(audio_files, job_dir)
+        raw_audio_paths = await _save_uploads(audio_files, job_dir)
+        audio_paths, audio_merge_info = merge_audio_files_for_transcription(raw_audio_paths, job_dir)
+
+        extra_context_normalized, extra_context_meta = _normalize_extra_context(extra_context)
+
         write_text(job_dir / "extra_context.txt", extra_context)
+        write_text(job_dir / "extra_context_normalized.txt", extra_context_normalized)
+        write_json(job_dir / "extra_context_meta.json", extra_context_meta)
+        write_json(job_dir / "audio_merge.json", audio_merge_info)
         write_text(job_dir / "segments_metadata_json.txt", segments_metadata_json)
 
         transcript = transcribe_audio_files(audio_paths, usage_log=usage_log)
@@ -216,7 +293,7 @@ async def process_web_endpoint_response(
         selection = _select_template_with_ai(
             client=client,
             transcript=transcript,
-            extra_context=extra_context,
+            extra_context=extra_context_normalized,
             catalog=catalog,
             job_dir=job_dir,
             usage_log=usage_log,
@@ -238,7 +315,7 @@ async def process_web_endpoint_response(
             transcripcion=transcript,
             reglas=rules,
             plantilla=selected,
-            texto_adicional=extra_context,
+            texto_adicional=extra_context_normalized,
             usage_log=usage_log,
         )
 
@@ -281,6 +358,10 @@ async def process_web_endpoint_response(
             **(result.get("v4_debug") if isinstance(result.get("v4_debug"), dict) else {}),
             "job_id": job_id,
             "job_dir": str(job_dir),
+            "audio_files_received": len(raw_audio_paths),
+            "audio_files_transcribed": len(audio_paths),
+            "audio_merge": audio_merge_info,
+            "extra_context_meta": extra_context_meta,
             "templates_available": len(templates),
             "selected_template_id": selected.get("id") or "",
             "selected_template_name": selected.get("nombre") or "",
@@ -295,7 +376,10 @@ async def process_web_endpoint_response(
             "metadata": {
                 "segments_metadata_json": segments_metadata_json,
                 "username": username,
-                "audio_files": [str(p) for p in audio_paths],
+                "raw_audio_files": [str(p) for p in raw_audio_paths],
+                "transcription_audio_files": [str(p) for p in audio_paths],
+                "audio_merge": audio_merge_info,
+                "extra_context_meta": extra_context_meta,
             },
             "debug_files": {
                 "job_dir": str(job_dir),
@@ -306,6 +390,9 @@ async def process_web_endpoint_response(
                 "reglas_usuario": str(job_dir / "reglas_usuario.md"),
                 "reglas_compiladas": str(job_dir / "reglas_compiladas.md"),
                 "rules_manifest": str(job_dir / "rules_manifest.json"),
+                "extra_context_normalized": str(job_dir / "extra_context_normalized.txt"),
+                "extra_context_meta": str(job_dir / "extra_context_meta.json"),
+                "audio_merge": str(job_dir / "audio_merge.json"),
                 "template_catalog": str(job_dir / "template_catalog.json"),
                 "selected_template": str(job_dir / "selected_template.txt"),
                 "usage": str(job_dir / "usage.json"),
