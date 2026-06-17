@@ -1,5 +1,8 @@
+<link rel="stylesheet" href="/static/iad_v4_header_panels.css">
+<link rel="stylesheet" href="/static/iadictador_logo_loading.css">
+<link rel="stylesheet" href="/static/iadictador_sidebar_fix.css">
 {% extends "iadictador/base.html" %}
-{% block title %}IA Dictador - Trining IA{% endblock %}
+{% block title %}dIctAdor - Training IA{% endblock %}
 
 {% block content %}
 <style>
@@ -23,7 +26,7 @@
 <section class="iad2-card">
   <div class="iad2-head">
     <div>
-      <h1 class="iad2-title">Trining IA</h1>
+      <h1 class="iad2-title">Training IA</h1>
       <div class="iad2-muted">Lista seleccionable de entradas para exportar o eliminar. Cada entrada abre el detalle completo de aprendizaje.</div>
     </div>
     <div class="iad2-actions">
@@ -138,7 +141,7 @@
   async function deleteSelected(){
     const ids=selectedIds();
     if(!ids.length){alert("Selecciona al menos una entrada.");return;}
-    if(!confirm(`Eliminar ${ids.length} entrada(s) de Trining IA?`))return;
+    if(!confirm(`Eliminar ${ids.length} entrada(s) de Training IA?`))return;
     const r=await fetch("/iad/api/trining-ia/delete.json",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -159,3 +162,13 @@
 })();
 </script>
 {% endblock %}
+
+<script src="/static/iadictador_sidebar_fix.js"></script>
+
+<script src="/static/iadictador_v4_trace_panel.js"></script>
+
+<script src="/static/iad_v4_validation_sync.js"></script>
+
+<script src="/static/iadictador_logo_loading.js"></script>
+
+<script src="/static/iad_v4_header_panels.js"></script>

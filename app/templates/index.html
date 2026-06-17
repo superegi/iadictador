@@ -2,13 +2,16 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>IA Dictador</title>
+  <title>dIctAdor</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/iadictador_sidebar_fix.css">
+  <link rel="stylesheet" href="/static/iadictador_logo_loading.css">
+  <link rel="stylesheet" href="/static/iad_v4_header_panels.css">
 </head>
 <body>
   <header class="topbar">
     <div>
-      <h1>IA Dictador</h1>
+      <h1>dIctAdor</h1>
       <p>Plantilla activa: <strong>{{ result.template_name }}</strong> · Motor: <strong>{{ provider }}</strong></p>
     </div>
     <div class="stats">
@@ -177,5 +180,9 @@
   </script>
 
 
+  <script src="/static/iadictador_sidebar_fix.js"></script>
+  <script src="/static/iad_v4_validation_sync.js"></script>
+  <script src="/static/iadictador_logo_loading.js"></script>
+  <script src="/static/iad_v4_header_panels.js"></script>
 </body>
 </html>

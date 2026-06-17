@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>dIctAdor — Uso OpenAI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/iadictador_sidebar_fix.css">
+  <style>
+    body {
+      margin: 0;
+      background: #0f172a;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 270px 1fr;
+      min-height: 100vh;
+    }
+    main {
+      padding: 24px;
+      max-width: 1400px;
+    }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    .muted { color: #9ca3af; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+    .card {
+      background: #111827;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .card .label {
+      color: #9ca3af;
+      font-size: 13px;
+    }
+    .card .value {
+      font-size: 30px;
+      font-weight: 850;
+      margin-top: 4px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid #334155;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: #cbd5e1; }
+    a { color: #7dd3fc; text-decoration: none; }
+    .pill {
+      display: inline-block;
+      border: 1px solid #475569;
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 12px;
+      color: #cbd5e1;
+      margin: 1px;
+      white-space: nowrap;
+    }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin: 16px 0;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 9px 13px;
+      background: #38bdf8;
+      color: #00111f;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    input {
+      background: #020617;
+      color: #e5e7eb;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 9px 10px;
+      width: 100px;
+    }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/iadictador_logo_loading.css">
+  <link rel="stylesheet" href="/static/iad_v4_header_panels.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="dictador-sidebar-fixed">
+    <div class="dictador-sidebar-brand">
+      <img src="/static/img/logo.png" alt="dIctAdor">
+      <div>
+        <div class="dictador-sidebar-brand-title">d<span class="ai">I</span>ct<span class="ai">A</span>dor</div>
+        <div class="dictador-sidebar-brand-subtitle">radiología asistida</div>
+      </div>
+    </div>
+    <a href="/iad/trabajo">Área de trabajo</a>
+    <a href="/iad/plantillas">Plantillas</a>
+    <a href="/iad/historial2">Historial</a>
+    <a href="/iad/trining-ia">Training IA</a>
+    <a href="/iad/reglas-ia">Reglas IA</a>
+    <a class="active" href="/iad/uso-openai">Uso OpenAI</a>
+  </aside>
+
+  <main>
+    <h1>Uso OpenAI</h1>
+    <div class="muted">
+      Resumen operacional calculado desde los trabajos V4 guardados. No incluye tarifa monetaria fija.
+    </div>
+
+    <div class="toolbar">
+      <label class="muted">Límite</label>
+      <input id="limit" type="number" min="1" max="5000" value="1000">
+      <button id="reload">Actualizar</button>
+      <span id="status" class="muted"></span>
+    </div>
+
+    <section class="cards">
+      <div class="card"><div class="label">Trabajos V4</div><div class="value" id="jobs">—</div></div>
+      <div class="card"><div class="label">Llamadas OpenAI</div><div class="value" id="calls">—</div></div>
+      <div class="card"><div class="label">Tokens</div><div class="value" id="tokens">—</div></div>
+      <div class="card"><div class="label">Tiempo total</div><div class="value" id="time">—</div></div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Por modelo</h2>
+        <table>
+          <thead><tr><th>Modelo</th><th>Llamadas</th><th>Tokens</th><th>Tiempo</th></tr></thead>
+          <tbody id="by-model"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Por etapa</h2>
+        <table>
+          <thead><tr><th>Etapa</th><th>Llamadas</th><th>Tokens</th><th>Tiempo</th></tr></thead>
+          <tbody id="by-stage"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2>Últimos trabajos</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Fecha</th><th>Estado</th><th>Plantilla</th><th>Modelo</th><th>Llamadas</th><th>Tokens</th><th>Job</th>
+          </tr>
+        </thead>
+        <tbody id="recent"></tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<script>
+function fmt(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  return Number(n).toLocaleString("es-CL");
+}
+function fmtMs(ms) {
+  if (!ms) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+function esc(s) {
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;");
+}
+function renderTable(id, rows, keyName) {
+  const el = document.getElementById(id);
+  el.innerHTML = rows.map(r => `
+    <tr>
+      <td>${esc(r[keyName])}</td>
+      <td>${fmt(r.calls)}</td>
+      <td>${fmt(r.tokens)}</td>
+      <td>${fmtMs(r.duration_ms)}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="4">Sin datos.</td></tr>`;
+}
+async function load() {
+  const status = document.getElementById("status");
+  const limit = document.getElementById("limit").value || "1000";
+  status.textContent = "Cargando...";
+
+  const res = await fetch(`/iad/api/v4/usage/summary.json?limit=${encodeURIComponent(limit)}`, {
+    credentials: "same-origin"
+  });
+
+  if (!res.ok) {
+    status.textContent = "Error HTTP " + res.status;
+    return;
+  }
+
+  const data = await res.json();
+  const s = data.summary || {};
+
+  document.getElementById("jobs").textContent = fmt(s.jobs);
+  document.getElementById("calls").textContent = fmt(s.calls);
+  document.getElementById("tokens").textContent = fmt(s.tokens);
+  document.getElementById("time").textContent = fmtMs(s.duration_ms);
+
+  renderTable("by-model", data.by_model || [], "model");
+  renderTable("by-stage", data.by_stage || [], "stage");
+
+  const recent = document.getElementById("recent");
+  recent.innerHTML = (data.recent_jobs || []).map(j => `
+    <tr>
+      <td><a href="/iad/historial2/w/${esc(j.id)}">#${esc(j.id)}</a></td>
+      <td>${esc(j.created_at || "")}</td>
+      <td><span class="pill">${esc(j.estado || "")}</span></td>
+      <td>${esc(j.template_name || "")}</td>
+      <td>${esc(j.modelo_ia || "")}</td>
+      <td>${fmt(j.total_calls)}</td>
+      <td>${fmt(j.total_tokens)}</td>
+      <td><span class="pill">${esc(j.job_id || j.source_ref || "")}</span></td>
+    </tr>
+  `).join("") || `<tr><td colspan="8">Sin trabajos V4.</td></tr>`;
+
+  status.textContent = "Actualizado.";
+}
+document.getElementById("reload").addEventListener("click", load);
+load().catch(err => {
+  document.getElementById("status").textContent = err.message || String(err);
+});
+</script>
+<script src="/static/iadictador_sidebar_fix.js"></script>
+  <script src="/static/iadictador_logo_loading.js"></script>
+  <script src="/static/iad_v4_header_panels.js"></script>
+</body>
+</html>

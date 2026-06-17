@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>dIctAdor — Reglas IA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --border: #334155;
+      --accent: #38bdf8;
+      --danger: #f87171;
+      --ok: #34d399;
+      --warn: #fbbf24;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+
+    aside {
+      background: #020617;
+      border-right: 1px solid var(--border);
+      padding: 18px 14px;
+    }
+
+    .brand {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      margin-bottom: 22px;
+    }
+
+    .brand .ai {
+      color: var(--accent);
+    }
+
+    .nav a {
+      display: block;
+      color: var(--text);
+      text-decoration: none;
+      padding: 10px 12px;
+      border-radius: 10px;
+      margin-bottom: 6px;
+    }
+
+    .nav a:hover, .nav a.active {
+      background: var(--panel2);
+    }
+
+    main {
+      padding: 24px;
+      max-width: 1300px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    .notice {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      color: var(--muted);
+    }
+
+    .notice strong {
+      color: var(--text);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .tab {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 9px 14px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    .tab.active {
+      background: var(--accent);
+      color: #00111f;
+      border-color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .scope-help {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 62vh;
+      resize: vertical;
+      box-sizing: border-box;
+      background: #020617;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      line-height: 1.45;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 14px;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: var(--accent);
+    }
+
+    textarea[disabled] {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #00111f;
+    }
+
+    .secondary {
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .danger {
+      background: #7f1d1d;
+      color: #fee2e2;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .status.ok {
+      color: var(--ok);
+    }
+
+    .status.err {
+      color: var(--danger);
+    }
+
+    .manifest {
+      font-size: 13px;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      max-height: 65vh;
+      overflow: auto;
+    }
+
+    .badge {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: 8px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      aside {
+        position: static;
+      }
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/iadictador_sidebar_fix.css">
+  <link rel="stylesheet" href="/static/iadictador_logo_loading.css">
+  <link rel="stylesheet" href="/static/iad_v4_header_panels.css">
+</head>
+
+<body>
+<div class="layout">
+  <aside>
+    <div class="brand">d<span class="ai">I</span>ct<span class="ai">A</span>dor</div>
+    <nav class="nav">
+      <a href="/iad/trabajo">Trabajo</a>
+      <a href="/iad/templates_repo">Plantillas</a>
+      <a class="active" href="/iad/reglas-ia">Reglas IA</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>Reglas IA</h1>
+    <div class="subtitle">
+      Repositorio multinivel de reglas. Orden de prioridad: aplicación &gt; generales &gt; usuario.
+    </div>
+
+    <div class="notice">
+      <strong>Prioridad:</strong> si hay contradicción, manda la regla superior.
+      Las reglas de usuario personalizan estilo, pero no deben contradecir reglas generales ni de aplicación.
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-scope="user">Usuario</button>
+      <button class="tab admin-only" data-scope="general">Generales <span class="badge">admin</span></button>
+      <button class="tab admin-only" data-scope="app">Aplicación <span class="badge">admin</span></button>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <h2 id="scope-title">Reglas de usuario</h2>
+        <div id="scope-help" class="scope-help">
+          Reglas propias del usuario autenticado. Se aplican después de las reglas de aplicación y generales.
+        </div>
+
+        <textarea id="rules-editor" spellcheck="false"></textarea>
+
+        <div class="actions">
+          <button id="save-btn" class="primary">Guardar reglas</button>
+          <button id="reload-btn" class="secondary">Recargar</button>
+          <button id="compiled-btn" class="secondary">Ver compiladas</button>
+          <span id="status" class="status"></span>
+        </div>
+      </section>
+
+      <aside class="card">
+        <h2>Estado</h2>
+        <div id="summary" class="scope-help">Cargando...</div>
+        <h2>Manifest</h2>
+        <pre id="manifest" class="manifest"></pre>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<script>
+let state = null;
+let currentScope = "user";
+let showingCompiled = false;
+
+const editor = document.getElementById("rules-editor");
+const statusEl = document.getElementById("status");
+const manifestEl = document.getElementById("manifest");
+const summaryEl = document.getElementById("summary");
+const titleEl = document.getElementById("scope-title");
+const helpEl = document.getElementById("scope-help");
+const saveBtn = document.getElementById("save-btn");
+
+function setStatus(text, kind = "") {
+  statusEl.textContent = text || "";
+  statusEl.className = "status" + (kind ? " " + kind : "");
+}
+
+function titleFor(scope) {
+  if (scope === "app") return "Reglas de aplicación";
+  if (scope === "general") return "Reglas generales";
+  if (scope === "compiled") return "Reglas compiladas efectivas";
+  return "Reglas de usuario";
+}
+
+function helpFor(scope) {
+  if (scope === "app") {
+    return "Reglas técnicas de máxima prioridad. Solo administrador.";
+  }
+  if (scope === "general") {
+    return "Reglas radiológicas comunes para todos los usuarios. Solo administrador.";
+  }
+  if (scope === "compiled") {
+    return "Vista de solo lectura: aplicación + generales + usuario, en orden de prioridad.";
+  }
+  return "Reglas propias del usuario autenticado. Cada usuario mantiene sus preferencias generales.";
+}
+
+function canEdit(scope) {
+  if (!state) return false;
+  if (scope === "user") return true;
+  if (scope === "general") return !!state.is_admin;
+  if (scope === "app") return !!state.is_admin;
+  return false;
+}
+
+function renderScope(scope) {
+  showingCompiled = scope === "compiled";
+  currentScope = scope;
+
+  document.querySelectorAll(".tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.scope === scope);
+  });
+
+  titleEl.textContent = titleFor(scope);
+  helpEl.textContent = helpFor(scope);
+
+  const rules = state?.rules || {};
+  editor.value = rules[scope] || "";
+  editor.disabled = !canEdit(scope);
+  saveBtn.disabled = !canEdit(scope);
+  saveBtn.classList.toggle("danger", !canEdit(scope));
+  saveBtn.textContent = canEdit(scope) ? "Guardar reglas" : "Solo lectura";
+
+  setStatus("");
+}
+
+async function loadRules() {
+  setStatus("Cargando reglas...");
+  const res = await fetch("/iad/api/rules/repo/current.json", {
+    credentials: "same-origin"
+  });
+
+  if (!res.ok) {
+    throw new Error("No se pudieron cargar las reglas: HTTP " + res.status);
+  }
+
+  state = await res.json();
+
+  document.querySelectorAll(".admin-only").forEach(el => {
+    el.classList.toggle("hidden", !state.is_admin);
+  });
+
+  const m = state.manifest || {};
+  manifestEl.textContent = JSON.stringify(m, null, 2);
+
+  const sources = m.sources || [];
+  const lines = sources.map(s => {
+    return `${s.scope}: ${s.lines} líneas / ${s.chars} caracteres`;
+  }).join("\n");
+
+  summaryEl.textContent =
+    `Usuario: ${state.username || ""}\n` +
+    `Admin: ${state.is_admin ? "sí" : "no"}\n` +
+    `Prioridad: ${state.conflict_policy}\n\n` +
+    lines;
+
+  if (showingCompiled) {
+    renderScope("compiled");
+  } else if (!state.is_admin && (currentScope === "app" || currentScope === "general")) {
+    renderScope("user");
+  } else {
+    renderScope(currentScope);
+  }
+
+  setStatus("Reglas cargadas.", "ok");
+}
+
+async function saveRules() {
+  if (!canEdit(currentScope)) {
+    setStatus("No tienes permiso para editar este nivel.", "err");
+    return;
+  }
+
+  setStatus("Guardando...");
+  const res = await fetch("/iad/api/rules/repo/update.json", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      scope: currentScope,
+      rules_text: editor.value
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || !data.ok) {
+    setStatus(data.detail || data.error || "Error al guardar.", "err");
+    return;
+  }
+
+  setStatus("Guardado.", "ok");
+  await loadRules();
+  renderScope(currentScope);
+}
+
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => renderScope(btn.dataset.scope));
+});
+
+document.getElementById("compiled-btn").addEventListener("click", () => {
+  if (!state) return;
+  currentScope = "compiled";
+  titleEl.textContent = titleFor("compiled");
+  helpEl.textContent = helpFor("compiled");
+  editor.value = state.rules?.compiled || "";
+  editor.disabled = true;
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Solo lectura";
+  showingCompiled = true;
+  setStatus("Vista compilada. No editable.", "");
+});
+
+document.getElementById("reload-btn").addEventListener("click", () => {
+  loadRules().catch(err => setStatus(err.message, "err"));
+});
+
+saveBtn.addEventListener("click", () => {
+  saveRules().catch(err => setStatus(err.message, "err"));
+});
+
+loadRules().catch(err => setStatus(err.message, "err"));
+</script>
+  <script src="/static/iadictador_sidebar_fix.js"></script>
+  <script src="/static/iad_v4_validation_sync.js"></script>
+  <script src="/static/iadictador_logo_loading.js"></script>
+  <script src="/static/iad_v4_header_panels.js"></script>
+</body>
+</html>

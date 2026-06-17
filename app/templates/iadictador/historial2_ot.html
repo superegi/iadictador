@@ -1,5 +1,8 @@
+<link rel="stylesheet" href="/static/iad_v4_header_panels.css">
+<link rel="stylesheet" href="/static/iadictador_logo_loading.css">
+<link rel="stylesheet" href="/static/iadictador_sidebar_fix.css">
 {% extends "iadictador/base.html" %}
-{% block title %}IA Dictador - OT {{ ot_id }}{% endblock %}
+{% block title %}dIctAdor - OT {{ ot_id }}{% endblock %}
 
 {% block content %}
 <style>
@@ -21,7 +24,7 @@
 <section class="iad2-card">
   <h1 class="iad2-title">OT #{{ ot_id }}</h1>
   <div class="iad2-muted">Versión no editable de la hoja de trabajo generada.</div>
-  <div style="margin-top:10px"><a class="iad2-link" href="/iad/historial2">← Volver a Historial2</a></div>
+  <div style="margin-top:10px"><a class="iad2-link" href="/iad/historial2">← Volver a Historial</a></div>
 </section>
 
 {% if not item %}
@@ -83,3 +86,13 @@
 </section>
 {% endif %}
 {% endblock %}
+
+<script src="/static/iadictador_sidebar_fix.js"></script>
+
+<script src="/static/iadictador_v4_trace_panel.js"></script>
+
+<script src="/static/iad_v4_validation_sync.js"></script>
+
+<script src="/static/iadictador_logo_loading.js"></script>
+
+<script src="/static/iad_v4_header_panels.js"></script>

@@ -1,0 +1,81 @@
+/* dIctAdor V4: paneles externos al informe */
+
+.iad-v4-admin-panel,
+.iad-v4-warning-panel {
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.iad-v4-admin-panel {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  color: #e5e7eb;
+}
+
+.iad-v4-warning-panel {
+  background: rgba(127, 29, 29, 0.20);
+  border: 1px solid rgba(248, 113, 113, 0.68);
+  color: #fecaca;
+  user-select: text;
+}
+
+.iad-v4-admin-panel h3,
+.iad-v4-warning-panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.iad-v4-admin-panel h3 {
+  color: #bae6fd;
+}
+
+.iad-v4-warning-panel h3 {
+  color: #fee2e2;
+}
+
+/* Cuadro administrativo fijo de 3 líneas */
+.iad-v4-admin-textarea {
+  width: 100%;
+  height: 78px !important;
+  min-height: 78px !important;
+  max-height: 78px !important;
+  box-sizing: border-box;
+  resize: none;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: #020617;
+  color: #e5e7eb;
+  padding: 10px;
+  font-size: 14px;
+  line-height: 1.35;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+/* Informe final: altura según contenido */
+.iad-v4-final-report-autosize {
+  overflow: hidden !important;
+  resize: vertical !important;
+  min-height: 260px !important;
+}
+
+.iad-v4-warning-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.45;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+/* Ocultar botones viejos si quedaron de parches anteriores */
+.iad-v4-panel-actions,
+.iad-v4-context-actions,
+#iad-v4-copy-admin,
+#iad-v4-copy-warnings,
+button[data-copy-context] {
+  display: none !important;
+}

@@ -1,5 +1,8 @@
+<link rel="stylesheet" href="/static/iad_v4_header_panels.css">
+<link rel="stylesheet" href="/static/iadictador_logo_loading.css">
+<link rel="stylesheet" href="/static/iadictador_sidebar_fix.css">
 {% extends "iadictador/base.html" %}
-{% block title %}IA Dictador - Historial2{% endblock %}
+{% block title %}dIctAdor - Historial{% endblock %}
 
 {% block content %}
 <style>
@@ -26,7 +29,7 @@
 <section class="iad2-card">
   <div class="iad2-head">
     <div>
-      <h1 class="iad2-title">Historial2</h1>
+      <h1 class="iad2-title">Historial</h1>
       <div class="iad2-muted">Tabla limpia de trabajos generados por audio/texto. No depende de la OT antigua.</div>
     </div>
     <div class="iad2-actions">
@@ -72,7 +75,7 @@
   function removeContaminants(){
     document.querySelectorAll("section,div").forEach(function(el){
       const t=(el.textContent||"").trim();
-      if(t.startsWith("Historial de validaciones IA Dictador")) el.remove();
+      if(t.startsWith("Historial de validaciones dIctAdor")) el.remove();
     });
   }
 
@@ -123,3 +126,13 @@
 })();
 </script>
 {% endblock %}
+
+<script src="/static/iadictador_sidebar_fix.js"></script>
+
+<script src="/static/iadictador_v4_trace_panel.js"></script>
+
+<script src="/static/iad_v4_validation_sync.js"></script>
+
+<script src="/static/iadictador_logo_loading.js"></script>
+
+<script src="/static/iad_v4_header_panels.js"></script>

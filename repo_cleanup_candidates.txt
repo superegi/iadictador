@@ -1,0 +1,224 @@
+# Candidatos a borrar del repositorio
+
+No borrar código sin auditoría. Este archivo es una pauta para revisar.
+
+## Borrado seguro casi siempre
+
+- `backup_*/`
+- `backups_*/`
+- `*.bak*`
+- `*.log`
+- `audit_*.txt`
+- `audit_*.log`
+- scripts temporales `iadictador_*_*.sh`
+- `tmp_*`
+- `*.tmp`
+
+## Revisar antes de borrar
+
+- Assets no usados en `app/static/img/`.
+- JS/CSS legacy que ya fue reemplazado por V4.
+- Flujos de audio antiguos si V4 queda definitivo.
+- Templates duplicados o rutas legacy.
+- Scripts diagnósticos antiguos.
+
+## No borrar por ahora
+
+- `app/services/ai/core_v4/`
+- `app/iadictador/`
+- `app/templates/`
+- `app/static/`
+- `docker-compose.yml`
+- `.env.example`
+- migraciones o modelos de base de datos.
+
+===== Archivos/carpetas backup =====
+./app/iadictador/router.py.bak_clinical_json_20260612_234354
+./app/iadictador/router.py.bak_fix_impression_ot_20260613_173337
+./app/iadictador/router.py.bak_ot_sync_20260613_172459
+./app/iadictador/router.py.bak_restore_validation_20260613_171823
+./app/iadictador/router.py.bak_trace_fix_method_20260616_220149
+./app/iadictador/router.py.bak_training_clean_20260613_163736
+./app/iadictador/router.py.bak_ui_cleanup_20260617_010516
+./app/iadictador/router.py.bak_web_v4_20260616_214913
+./app/iadictador/rules_repo_router.py.bak_rules_ui_20260616_234859
+./app/iad_review.py.bak_compare_dictado_20260612_230459
+./app/iad_review.py.bak_hallazgo_vs_impresion_20260612_232047
+./app/iad_review.py.bak_integrar_revision_20260612_230030
+./app/iad_review.py.bak_lateralidad_20260612_231518
+./app/main.py.bak_review_router_20260612_230459
+./app/main.py.bak_revision_20260612_225710
+./app/main.py.bak_revision_flow_20260612_230030
+./app/main.py.bak_rules_repo_20260616_234424
+./app/main.py.bak_usage_dashboard_20260617_010209
+./app/main.py.bak_v4_trace_20260617_005036
+./app/main.py.bak_v4_validation_sync_20260617_005630
+./app/static/iadictador_logo_loading.css.bak_working_size_20260617_011230
+./app/static/iadictador_logo_loading.js.bak_working_size_20260617_011230
+./app/static/iadictador_radiology_flow.js.bak_clinical_json_20260612_234354
+./app/static/iadictador_radiology_flow.js.bak_hallazgo_vs_impresion_20260612_232047
+./app/static/iadictador_radiology_flow.js.bak_lateralidad_20260612_231518
+./app/static/iadictador_sidebar_fix.js.bak_usage_dashboard_20260617_010209
+./app/static/iadictador_work_v2.js.bak_apply_structured_20260613_161903
+./app/static/iadictador_work_v2.js.bak_audio_text_20260617_000240
+./app/static/iadictador_work_v2.js.bak_clean_accidental_20260613_163512
+./app/static/iadictador_work_v2.js.bak_final_panel_20260613_154632
+./app/static/iadictador_work_v2.js.bak_fix_reuse_20260617_002630
+./app/static/iadictador_work_v2.js.bak_preselect_clean_20260613_165330
+./app/static/iadictador_work_v2.js.bak_real_final_textarea_20260613_155856
+./app/static/iadictador_work_v2.js.bak_rules_ui_20260616_234859
+./app/static/iadictador_work_v2.js.bak_sidebar_20260617_004703
+./app/static/iadictador_work_v2.js.bak_smart_editor_20260613_161435
+./app/static/iadictador_work_v2.js.bak_template_merge_20260613_160830
+./app/static/iadictador_work_v2.js.bak_trace_fix_method_20260616_220149
+./app/static/iadictador_work_v2.js.bak_v4_trace_20260617_005036
+./app/static/iad_training_corrections.js.bak_fix_impression_ot_20260613_173337
+./app/static/iad_training_corrections.js.bak_ot_sync_20260613_172459
+./app/static/iad_training_corrections.js.bak_restore_validation_20260613_171823
+./app/static/iad_training_corrections.js.bak_v4_validation_sync_20260617_005630
+./app/static/iad_v4_header_panels.js.bak_scope_20260617_020359
+./app/static/iad_v4_header_panels.js.bak_spacing_antecedentes_20260617_015710
+./app/templates/iadictador/admin_training.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/admin_user_detail.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/admin_user_new.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/admin_users.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/base.html.bak_fix_impression_ot_20260613_173337
+./app/templates/iadictador/base.html.bak_ot_sync_20260613_172459
+./app/templates/iadictador/base.html.bak_restore_validation_20260613_171823
+./app/templates/iadictador/base.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/base.html.bak_training_clean_20260613_163736
+./app/templates/iadictador/change_password.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/history.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/login.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/profile.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/template_edit.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/templates_importer.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/templates_repo.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/work.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/workplaces_repo.html.bak_revision_bridge_20260612_230030
+./app/templates/iadictador/work_v2.html.bak_apply_structured_20260613_161903
+./app/templates/iadictador/work_v2.html.bak_clean_accidental_20260613_163512
+./app/templates/iadictador/work_v2.html.bak_final_panel_20260613_154632
+./app/templates/iadictador/work_v2.html.bak_preselect_clean_20260613_165330
+./app/templates/iadictador/work_v2.html.bak_real_final_textarea_20260613_155856
+./app/templates/iadictador/work_v2.html.bak_smart_editor_20260613_161435
+./app/templates/iadictador/work_v2.html.bak_template_merge_20260613_160830
+./app/templates/index.html.bak_revision_bridge_20260612_230030
+./backup_docs_20260617_022300
+./backup_fix_report_panels_20260617_015415
+./backup_header_order_clean_20260617_013931
+./backup_header_panels_20260617_012837
+./backup_header_panels_20260617_012837/templates/iadictador/admin_training.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/admin_user_detail.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/admin_user_new.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/admin_users.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/base.html.bak_fix_impression_ot_20260613_173337
+./backup_header_panels_20260617_012837/templates/iadictador/base.html.bak_ot_sync_20260613_172459
+./backup_header_panels_20260617_012837/templates/iadictador/base.html.bak_restore_validation_20260613_171823
+./backup_header_panels_20260617_012837/templates/iadictador/base.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/base.html.bak_training_clean_20260613_163736
+./backup_header_panels_20260617_012837/templates/iadictador/change_password.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/history.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/login.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/profile.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/template_edit.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/templates_importer.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/templates_repo.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/work.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/workplaces_repo.html.bak_revision_bridge_20260612_230030
+./backup_header_panels_20260617_012837/templates/iadictador/work_v2.html.bak_apply_structured_20260613_161903
+./backup_header_panels_20260617_012837/templates/iadictador/work_v2.html.bak_clean_accidental_20260613_163512
+./backup_header_panels_20260617_012837/templates/iadictador/work_v2.html.bak_final_panel_20260613_154632
+./backup_header_panels_20260617_012837/templates/iadictador/work_v2.html.bak_preselect_clean_20260613_165330
+./backup_header_panels_20260617_012837/templates/iadictador/work_v2.html.bak_real_final_textarea_20260613_155856
+./backup_header_panels_20260617_012837/templates/iadictador/work_v2.html.bak_smart_editor_20260613_161435
+./backup_header_panels_20260617_012837/templates/iadictador/work_v2.html.bak_template_merge_20260613_160830
+./backup_header_panels_20260617_012837/templates/index.html.bak_revision_bridge_20260612_230030
+./backup_report_box_cleanup_20260617_014847
+./backups/add_radiology_rules_20260616_211145/main.py.bak
+./backups/add_radiology_rules_20260616_211145/templates_repo.html.bak
+./backups/clinical_review_engine_20260613_010333/iadictador_work_v2.js.bak
+./backups/clinical_review_engine_20260613_010333/router.py.bak
+./backups/clinical_review_engine_20260613_010333/work_v2.html.bak
+./backups/fix_3audios_inline_bridge_20260613_001434/iadictador_radiology_flow.js.bak
+./backups/fix_3audios_inline_bridge_20260613_001434/radiology_flow.py.bak
+./backups/fix_audio_prostata_panel_20260613_000757/clinical_json.py.bak
+./backups/fix_audio_prostata_panel_20260613_000757/iadictador_radiology_flow.js.bak
+./backups/fix_audio_prostata_panel_20260613_000757/radiology_flow.py.bak
+./backups/fix_flujo_directo_inline_20260613_002145/iadictador_radiology_flow.js.bak
+./backups/fix_flujo_directo_inline_20260613_002145/work.html.bak
+./backups/fix_inline_definitivo_20260613_001850/iadictador_radiology_flow.js.bak
+./backups/fix_inline_definitivo_20260613_001850/iad_review.py.bak
+./backups/fix_plantilla_inline_review_20260613_000134/iadictador_radiology_flow.js.bak
+./backups/fix_plantilla_inline_review_20260613_000134/router.py.bak
+./backups/fix_pydantic_template_id_20260613_002904/clinical_json.py.bak
+./backups/fix_pydantic_template_id_20260613_002904/router.py.bak
+./backups/fix_trabajo2_audio_file_20260613_004302/iadictador_work_v2.js.bak
+./backups/fix_trabajo2_audio_file_20260613_004302/work_v2.html.bak
+./backups/fix_trabajo2_dedup_prostata_diverticulos_20260613_004922/iadictador_work_v2.js.bak
+./backups/fix_trabajo2_dedup_prostata_diverticulos_20260613_004922/work_v2.html.bak
+./backups/fix_training_sidebar_panel_20260613_011457/iad_saved_records_panel.js.bak
+./backups/fix_training_sidebar_panel_20260613_011457/router.py.bak
+./backups/guardar_trabajo_historial_training_20260613_011224/iadictador_work_v2.js.bak
+./backups/guardar_trabajo_historial_training_20260613_011224/router.py.bak
+./backups/guardar_trabajo_historial_training_20260613_011224/work_v2.html.bak
+./backups/inline_review_split_20260612_235219/iadictador_radiology_flow.js.bak
+./backups/json_clinico_20260612_234354/iadictador_radiology_flow.js.bak
+./backups/json_clinico_20260612_234354/router.py.bak
+./backups/panel_inline_directo_v7_20260613_003348/iadictador_radiology_flow.js.bak
+./backups/panel_inline_directo_v7_20260613_003348/work.html.bak
+./backups/trabajo2_limpio_20260613_003850/router.py.bak
+./backups/trabajo2_motor_transversal_20260613_005331/iadictador_work_v2.js.bak
+./backups/trabajo2_motor_transversal_20260613_005331/work_v2.html.bak
+./backups/unificar_sidebar_base_20260613_012516/iadictador_work_v2.js.bak
+./backups/unificar_sidebar_base_20260613_012516/router.py.bak
+./backups/unificar_sidebar_base_20260613_012516/training.html.bak
+./backups/unificar_sidebar_base_20260613_012516/work_v2.html.bak
+./backups/unificar_trabajo2_20260613_010737/iadictador_work_v2.js.bak
+./backups/unificar_trabajo2_20260613_010737/router.py.bak
+./backups/unificar_trabajo2_20260613_010737/work.html.bak
+./backups/unificar_trabajo2_20260613_010737/work_v2.html.bak
+./backups/work_inline_v6_20260613_002626/work.html.bak
+
+===== Logs locales =====
+./audits/audit_ia_v3_20260616_220034.log
+./audits/audit_steps_20260616_223047.log
+./audit_training_db_20260617_003138.log
+./cierre_docs_20260617_022300.log
+./cierre_docs_20260617_022600.log
+./fix_report_panels_20260617_015415.log
+./header_order_clean_20260617_013931.log
+./header_panels_v4_20260617_012837.log
+./logo_working_size_20260617_011230.log
+./report_box_cleanup_20260617_014847.log
+./scope_header_panels_20260617_020359.log
+./spacing_antecedentes_20260617_015710.log
+
+===== Temporales iadictador =====
+
+===== Posibles assets legacy =====
+app/static/iadictador_logo_loading.css.bak_working_size_20260617_011230
+app/static/iadictador_logo_loading.js.bak_working_size_20260617_011230
+app/static/iadictador_radiology_flow.js.bak_clinical_json_20260612_234354
+app/static/iadictador_radiology_flow.js.bak_hallazgo_vs_impresion_20260612_232047
+app/static/iadictador_radiology_flow.js.bak_lateralidad_20260612_231518
+app/static/iadictador_sidebar_fix.js.bak_usage_dashboard_20260617_010209
+app/static/iadictador_work_v2.js.bak_apply_structured_20260613_161903
+app/static/iadictador_work_v2.js.bak_audio_text_20260617_000240
+app/static/iadictador_work_v2.js.bak_clean_accidental_20260613_163512
+app/static/iadictador_work_v2.js.bak_final_panel_20260613_154632
+app/static/iadictador_work_v2.js.bak_fix_reuse_20260617_002630
+app/static/iadictador_work_v2.js.bak_preselect_clean_20260613_165330
+app/static/iadictador_work_v2.js.bak_real_final_textarea_20260613_155856
+app/static/iadictador_work_v2.js.bak_rules_ui_20260616_234859
+app/static/iadictador_work_v2.js.bak_sidebar_20260617_004703
+app/static/iadictador_work_v2.js.bak_smart_editor_20260613_161435
+app/static/iadictador_work_v2.js.bak_template_merge_20260613_160830
+app/static/iadictador_work_v2.js.bak_trace_fix_method_20260616_220149
+app/static/iadictador_work_v2.js.bak_v4_trace_20260617_005036
+app/static/iad_training_corrections.js.bak_fix_impression_ot_20260613_173337
+app/static/iad_training_corrections.js.bak_ot_sync_20260613_172459
+app/static/iad_training_corrections.js.bak_restore_validation_20260613_171823
+app/static/iad_training_corrections.js.bak_v4_validation_sync_20260617_005630
+app/static/iad_v4_header_panels.js.bak_scope_20260617_020359
+app/static/iad_v4_header_panels.js.bak_spacing_antecedentes_20260617_015710
