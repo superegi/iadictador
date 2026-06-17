@@ -5,16 +5,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: iadictador_app
+    container_name: iadictador_appv3
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8015/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8014/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
     ports:
-      - "${APP_BIND_IP:-0.0.0.0}:${APP_PORT:-8015}:8015"
+      - "${APP_BIND_IP:-0.0.0.0}:${APP_PORT:-8014}:8014"
     environment:
       TZ: ${TZ}
       IADICTADOR_SESSION_SECRET: ${IADICTADOR_SESSION_SECRET}
@@ -27,7 +27,7 @@ services:
     command: >
       uvicorn app.main:app
       --host 0.0.0.0
-      --port 8015
+      --port 8014
 
 volumes:
   iadictador_data:
