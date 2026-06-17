@@ -1856,7 +1856,7 @@
     const warnings = Array.isArray(data.advertencias) ? data.advertencias : [];
     const omissions = Array.isArray(data.posibles_omisiones) ? data.posibles_omisiones : [];
     const tpl = data.plantilla_sugerida || {};
-    const method = data.metodo || "audio_first";
+    const method = data.metodo_visible || data.metodo || "audio_first";
 
     const main = findMainTextArea();
     if (main && transcription) setText(main, transcription);
@@ -2222,7 +2222,7 @@
           <strong>Confianza</strong><br>${esc(tpl.confianza || "—")}
         </div>
         <div style="padding:.65rem;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(15,23,42,.45);">
-          <strong>Método</strong><br>${esc(data.metodo || "audio_first")}
+          <strong>Método</strong><br>${esc(data.metodo_visible || data.metodo || "audio_first")}
         </div>
         <div style="padding:.65rem;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(15,23,42,.45);">
           <strong>Audio</strong><br>${esc(audioMeta.segment_count || "")} segmento(s) ${audioMeta.duration_seconds ? "· " + esc(Number(audioMeta.duration_seconds).toFixed(1)) + " s" : ""}
@@ -3333,7 +3333,7 @@
 
     const ok = editor && editor.ok ? "sí" : "no";
     const model = editor.model || "—";
-    const method = data.metodo || data.method || "—";
+    const method = data.metodo_visible || data.metodo || data.method || "—";
     const confidence = (data.plantilla_sugerida && data.plantilla_sugerida.confianza) || editor.confianza || data.confianza || "—";
 
     panel.innerHTML = `

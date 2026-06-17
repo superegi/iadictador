@@ -5141,15 +5141,63 @@ async def iad_api_audio_procesar_dictado_completo_json(
     db: Session = Depends(get_db),
 ):
     user = require_user(request, db)
-    from app.services.ai.tasks.audio_first_flow import process_endpoint_response
 
-    return await process_endpoint_response(
+    import os as _iad_audio_os
+
+    flow_mode = (
+        _iad_audio_os.getenv("IAD_AUDIO_FLOW_MODE", "v4")
+        .strip()
+        .lower()
+    )
+
+    if flow_mode in {"v4", "core_v4", "clean", "clean_v4"}:
+        from app.services.ai.core_v4.web_pipeline import process_web_endpoint_response as process_endpoint_response
+    elif flow_mode in {"v3", "clean_v3", "iad_v3"}:
+        from app.services.ai.v3.pipeline import process_v3_endpoint_response as process_endpoint_response
+    else:
+        from app.services.ai.tasks.audio_first_flow import process_endpoint_response
+
+    result = await process_endpoint_response(
         audio_files=audio_files,
         segments_metadata_json=segments_metadata_json,
         extra_context=extra_context,
         username=getattr(user, "username", "") or "",
         db=db,
     )
+
+    if isinstance(result, dict):
+        result.setdefault("iad_audio_flow_mode", flow_mode)
+
+        # Trazabilidad explícita para evitar que la UI muestre campos heredados.
+        if flow_mode in {"v4", "core_v4", "clean", "clean_v4"}:
+            result["metodo"] = "core_v4_audio_rules_template"
+            result["iad_audio_flow_mode"] = "v4"
+            result["metodo_visible"] = "core_v4_audio_rules_template"
+
+        elif flow_mode in {"v3", "clean_v3", "iad_v3"}:
+            result.setdefault("metodo_visible", result.get("metodo") or "iad_v3_clean_parallel")
+        else:
+            result.setdefault("metodo_visible", result.get("metodo") or "legacy")
+
+    return result
+
+    if flow_mode in {"v3", "clean", "v3_clean", "iad_v3"}:
+        from app.services.ai.v3.pipeline import process_v3_endpoint_response as process_endpoint_response
+    else:
+        from app.services.ai.tasks.audio_first_flow import process_endpoint_response
+
+    result = await process_endpoint_response(
+        audio_files=audio_files,
+        segments_metadata_json=segments_metadata_json,
+        extra_context=extra_context,
+        username=getattr(user, "username", "") or "",
+        db=db,
+    )
+
+    if isinstance(result, dict):
+        result.setdefault("iad_audio_flow_mode", flow_mode)
+
+    return result
 
 
 # IAD_TRAINING_CORRECTIONS_ENDPOINTS_V2

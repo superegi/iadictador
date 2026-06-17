@@ -202,67 +202,9 @@ app.include_router(iadictador_router)
 # IA Dictador - modo revisión demo
 app.include_router(iad_review_router)
 
+# IA Dictador V3 - reglas editables y endpoint paralelo limpio
+from app.iadictador.rules_router import router as iad_rules_router
+from app.iadictador.v3_audio_router import router as iad_v3_audio_router
 
-# IAD_RULES_API_BEGIN
-
-from pathlib import Path as _IAD_Path
-from fastapi import Request as _IAD_Request
-from fastapi.responses import JSONResponse as _IAD_JSONResponse
-import os as _IAD_os
-
-_IAD_RULES_FILE = _IAD_Path(
-    _IAD_os.getenv("IAD_RULES_FILE", "data/reglas_radiologicas.md")
-)
-
-def _iad_read_rules_text() -> str:
-    _IAD_RULES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if not _IAD_RULES_FILE.exists():
-        _IAD_RULES_FILE.write_text("", encoding="utf-8")
-    return _IAD_RULES_FILE.read_text(encoding="utf-8")
-
-def _iad_write_rules_text(text: str) -> None:
-    _IAD_RULES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _IAD_RULES_FILE.with_suffix(_IAD_RULES_FILE.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(_IAD_RULES_FILE)
-
-@app.get("/api/rules/current")
-async def iad_api_rules_current():
-    return {
-        "ok": True,
-        "rules_text": _iad_read_rules_text()
-    }
-
-@app.post("/api/rules/update")
-async def iad_api_rules_update(request: _IAD_Request):
-    try:
-        payload = await request.json()
-    except Exception:
-        return _IAD_JSONResponse(
-            status_code=400,
-            content={
-                "ok": False,
-                "error": "JSON inválido"
-            }
-        )
-
-    rules_text = payload.get("rules_text", "")
-
-    if not isinstance(rules_text, str):
-        return _IAD_JSONResponse(
-            status_code=400,
-            content={
-                "ok": False,
-                "error": "rules_text debe ser texto"
-            }
-        )
-
-    _iad_write_rules_text(rules_text)
-
-    return {
-        "ok": True,
-        "bytes": len(rules_text.encode("utf-8"))
-    }
-
-# IAD_RULES_API_END
-
+app.include_router(iad_rules_router)
+app.include_router(iad_v3_audio_router)
