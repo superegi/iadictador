@@ -4070,3 +4070,41 @@
   };
 })();
 
+
+// dIctAdor: link lateral hacia repositorio de reglas IA
+(function injectRulesIaSidebarLink() {
+  function addLink() {
+    if (document.querySelector('[data-iad-rules-link="1"]')) return;
+
+    const candidates = [
+      document.querySelector("#sidebar"),
+      document.querySelector(".sidebar"),
+      document.querySelector(".side-menu"),
+      document.querySelector(".iad-sidebar"),
+      document.querySelector("aside"),
+      document.querySelector("nav")
+    ].filter(Boolean);
+
+    const target = candidates[0];
+    if (!target) return;
+
+    const a = document.createElement("a");
+    a.href = "/iad/reglas-ia";
+    a.textContent = "Reglas IA";
+    a.setAttribute("data-iad-rules-link", "1");
+    a.style.display = "block";
+    a.style.padding = "10px 12px";
+    a.style.marginTop = "6px";
+    a.style.borderRadius = "10px";
+    a.style.textDecoration = "none";
+    a.style.color = "inherit";
+
+    target.appendChild(a);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", addLink);
+  } else {
+    addLink();
+  }
+})();

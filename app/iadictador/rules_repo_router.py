@@ -4,6 +4,8 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,7 @@ from app.services.ai.core_v4.rules_store import (
 )
 
 router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
 
 
 class RulesUpdatePayload(BaseModel):
@@ -37,6 +40,26 @@ def _current_user(request: Request, db: Session) -> Any:
     from app.iadictador.router import require_user
 
     return require_user(request, db)
+
+
+@router.get("/iad/reglas-ia", response_class=HTMLResponse)
+async def iad_reglas_ia_page(
+    request: Request,
+    db: Session = Depends(__import__("app.iadictador.router", fromlist=["get_db"]).get_db),
+):
+    user = _current_user(request, db)
+    username = str(getattr(user, "username", "") or "")
+    admin = _is_admin(user)
+
+    return templates.TemplateResponse(
+        "iadictador_rules_repo.html",
+        {
+            "request": request,
+            "username": username,
+            "is_admin": admin,
+        },
+    )
+
 
 @router.get("/iad/api/rules/repo/current.json")
 async def iad_rules_repo_current_json(
