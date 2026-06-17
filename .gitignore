@@ -67,3 +67,9 @@ v4_fix_*.log
 web_v4_clean_*.log
 trace_fix_method_v4_*.log
 commit_v4_estado_funcional_*.log
+
+# IA Dictador local/generated artifacts
+iadictador_*.sh
+diag_usage_v4_*.log
+fix_usage_*.log
+rules_repo_v4_*.log
