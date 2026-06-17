@@ -16,6 +16,7 @@ from .template_store import (
     load_available_templates,
 )
 from .usage import UsageLog, now_ms
+from .rules_store import load_effective_rules, write_job_rule_audit
 
 
 class CoreV4WebError(RuntimeError):
@@ -196,10 +197,13 @@ async def process_web_endpoint_response(
         write_text(job_dir / "segments_metadata_json.txt", segments_metadata_json)
 
         transcript = transcribe_audio_files(audio_paths, usage_log=usage_log)
-        rules = _read_rules()
+
+        rules_bundle = load_effective_rules(username=username)
+        rules = rules_bundle["compiled_rules"]
 
         write_text(job_dir / "transcripcion.txt", transcript)
         write_text(job_dir / "reglas.md", rules)
+        write_job_rule_audit(job_dir, rules_bundle)
 
         templates = load_available_templates(db, username=username)
         if not templates:
@@ -281,7 +285,7 @@ async def process_web_endpoint_response(
             "selected_template_id": selected.get("id") or "",
             "selected_template_name": selected.get("nombre") or "",
             "selected_template_chars": len(str(selected.get("contenido") or "")),
-            "rules_file": str(_rules_path()),
+            "rules_manifest": rules_bundle.get("manifest", {}),
             "report_chars": len(informe),
             "report_newlines": informe.count("\n"),
         }
@@ -297,6 +301,11 @@ async def process_web_endpoint_response(
                 "job_dir": str(job_dir),
                 "transcripcion": str(job_dir / "transcripcion.txt"),
                 "reglas": str(job_dir / "reglas.md"),
+                "reglas_app": str(job_dir / "reglas_app.md"),
+                "reglas_generales": str(job_dir / "reglas_generales.md"),
+                "reglas_usuario": str(job_dir / "reglas_usuario.md"),
+                "reglas_compiladas": str(job_dir / "reglas_compiladas.md"),
+                "rules_manifest": str(job_dir / "rules_manifest.json"),
                 "template_catalog": str(job_dir / "template_catalog.json"),
                 "selected_template": str(job_dir / "selected_template.txt"),
                 "usage": str(job_dir / "usage.json"),
