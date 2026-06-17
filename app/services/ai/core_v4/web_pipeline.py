@@ -15,6 +15,7 @@ from .template_store import (
     find_template_by_id_or_name,
     load_available_templates,
 )
+from .usage import UsageLog, now_ms
 
 
 class CoreV4WebError(RuntimeError):
@@ -75,6 +76,7 @@ def _select_template_with_ai(
     extra_context: str,
     catalog: list[dict[str, Any]],
     job_dir: Path,
+    usage_log: UsageLog | None = None,
 ) -> dict[str, Any]:
     model = (
         os.getenv("IAD_AI_MODEL_TEMPLATE_SELECT")
@@ -87,7 +89,10 @@ def _select_template_with_ai(
 Debes seleccionar la plantilla radiológica más adecuada.
 
 Usa la transcripción y el texto adicional para elegir UNA plantilla del catálogo.
-No generes informe todavía.
+
+Regla crítica:
+Si el médico dicta explícitamente el tipo de examen, esa instrucción manda sobre los hallazgos incidentales.
+No elijas TC TAP solo porque se mencione hígado u otro órgano abdominal incidental en un TC de tórax.
 
 TRANSCRIPCIÓN:
 {transcript}
@@ -125,11 +130,27 @@ Devuelve SOLO JSON válido:
         "response_format": {"type": "json_object"},
     }
 
+    started = now_ms()
     try:
         completion = client.chat.completions.create(**kwargs)
     except Exception:
         kwargs.pop("response_format", None)
         completion = client.chat.completions.create(**kwargs)
+    ended = now_ms()
+
+    if usage_log is not None:
+        usage_log.add(
+            stage="template_selection",
+            provider="openai",
+            model=model,
+            started_at_ms=started,
+            ended_at_ms=ended,
+            usage=getattr(completion, "usage", None),
+            extra={
+                "templates_in_catalog": len(catalog),
+                "transcription_chars": len(str(transcript or "")),
+            },
+        )
 
     raw = completion.choices[0].message.content or ""
     write_text(job_dir / "v4_template_selection_raw.txt", raw)
@@ -164,11 +185,17 @@ async def process_web_endpoint_response(
         job_dir = _upload_base_dir() / "core_v4_jobs" / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
 
+        usage_log = UsageLog(
+            job_id=job_id,
+            username=username,
+            ot_id="",
+        )
+
         audio_paths = await _save_uploads(audio_files, job_dir)
         write_text(job_dir / "extra_context.txt", extra_context)
         write_text(job_dir / "segments_metadata_json.txt", segments_metadata_json)
 
-        transcript = transcribe_audio_files(audio_paths)
+        transcript = transcribe_audio_files(audio_paths, usage_log=usage_log)
         rules = _read_rules()
 
         write_text(job_dir / "transcripcion.txt", transcript)
@@ -188,6 +215,7 @@ async def process_web_endpoint_response(
             extra_context=extra_context,
             catalog=catalog,
             job_dir=job_dir,
+            usage_log=usage_log,
         )
 
         selected = find_template_by_id_or_name(
@@ -207,12 +235,14 @@ async def process_web_endpoint_response(
             reglas=rules,
             plantilla=selected,
             texto_adicional=extra_context,
+            usage_log=usage_log,
         )
 
         informe = str(result.get("informe_final") or "")
 
         result["ok"] = bool(result.get("ok", True))
         result["metodo"] = "core_v4_audio_rules_template"
+        result["metodo_visible"] = "core_v4_audio_rules_template"
         result["iad_audio_flow_mode"] = "v4"
         result["audio_first"] = False
 
@@ -229,6 +259,19 @@ async def process_web_endpoint_response(
         result.setdefault("advertencias", [])
         result.setdefault("posibles_omisiones", [])
         result.setdefault("impresion_diagnostica", "")
+
+        if not isinstance(result.get("metadata_clinica"), dict):
+            result["metadata_clinica"] = {
+                "nombre_paciente": "",
+                "edad": "",
+                "sexo": "",
+                "centro": "",
+                "estudio": "",
+                "antecedentes": "",
+                "tecnica": "",
+            }
+
+        result["openai_usage"] = usage_log.to_dict()
 
         result["v4_debug"] = {
             **(result.get("v4_debug") if isinstance(result.get("v4_debug"), dict) else {}),
@@ -256,6 +299,7 @@ async def process_web_endpoint_response(
                 "reglas": str(job_dir / "reglas.md"),
                 "template_catalog": str(job_dir / "template_catalog.json"),
                 "selected_template": str(job_dir / "selected_template.txt"),
+                "usage": str(job_dir / "usage.json"),
                 "prompt": str(job_dir / "prompt.txt"),
                 "raw_model_response": str(job_dir / "raw_model_response.txt"),
                 "result": str(job_dir / "result.json"),
@@ -265,6 +309,7 @@ async def process_web_endpoint_response(
 
         write_text(job_dir / "prompt.txt", prompt)
         write_text(job_dir / "raw_model_response.txt", raw)
+        write_json(job_dir / "usage.json", result["openai_usage"])
         write_json(job_dir / "result.json", result)
         write_text(job_dir / "informe_final.txt", informe)
 
@@ -275,5 +320,6 @@ async def process_web_endpoint_response(
             "ok": False,
             "error": str(exc),
             "metodo": "core_v4_audio_rules_template",
+            "metodo_visible": "core_v4_audio_rules_template",
             "iad_audio_flow_mode": "v4",
         }

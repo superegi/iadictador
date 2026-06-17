@@ -8,6 +8,15 @@ OUTPUT_SCHEMA = {
     "ok": True,
     "metodo": "core_v4_audio_rules_template",
     "transcripcion": "",
+    "metadata_clinica": {
+        "nombre_paciente": "",
+        "edad": "",
+        "sexo": "",
+        "centro": "",
+        "estudio": "",
+        "antecedentes": "",
+        "tecnica": ""
+    },
     "plantilla_usada": {
         "id": "",
         "nombre": "",
@@ -56,6 +65,21 @@ TAREA:
 Editar la PLANTILLA usando lo dictado por el médico.
 El resultado NO debe ser un resumen.
 El resultado debe ser la PLANTILLA COMPLETA modificada.
+
+
+EXTRACCIÓN DE METADATA CLÍNICA:
+En la misma llamada, sin llamadas adicionales, debes extraer si está disponible:
+- nombre_paciente
+- edad
+- sexo
+- centro o lugar al que corresponde el estudio
+- estudio
+- antecedentes
+- tecnica
+
+Si un dato no fue dictado ni escrito, dejar string vacío.
+No inventar datos.
+Si el médico dice "no referido" para antecedentes, usar "No referidos."
 
 REGLAS DE MEZCLA:
 - Conserva la estructura y los saltos de línea de la plantilla.

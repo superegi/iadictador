@@ -54,3 +54,16 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 audio_uploads/
+
+# IA Dictador local/generated artifacts
+audits/
+runs/
+reglas_usuario/
+TC_Torax_SC.json
+iadictador_*.sh~
+*_v4_*.log
+core_v4_create_*.log
+v4_fix_*.log
+web_v4_clean_*.log
+trace_fix_method_v4_*.log
+commit_v4_estado_funcional_*.log
